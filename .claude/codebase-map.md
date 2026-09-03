@@ -1,7 +1,7 @@
 # Codebase Map - Beads Task-Issue Tracker
 
 > Auto-generated comprehensive map of the codebase for faster AI reasoning.
-> Last updated: 2026-02-26 | App version: 1.24.2
+> Last updated: 2026-09-03 | App version: 2.25.0 (combined fork: nivedano + drkatz)
 
 ## Architecture Overview
 
@@ -79,7 +79,9 @@
 | File | Exports | Purpose |
 |------|---------|---------|
 | `useAdaptivePolling.ts` | `useAdaptivePolling()` | Smart polling: 5s active, 30s blurred, 60s idle, paused when hidden. Cheap mtime check (1s) + expensive data fetch |
-| `useChangeDetection.ts` | `useChangeDetection()` | Change detection via native file watcher (Tauri events). Watches `.beads/` or `.tracker/` based on backend mode. SSE backend kept as dead code. 300ms debounce + 3s cooldown |
+| `useChangeDetection.ts` | `useChangeDetection()` | Change detection via native file watcher (Tauri events). Watches `.beads/` or `.tracker/` based on backend mode. SSE backend kept as dead code. Queue-based single-flight handler (replaced debounce + `isProcessing`) with 3s cooldown |
+| `usePollScheduler.ts` | `usePollScheduler()` | Poll backpressure scheduler — bounds refresh work during high issue churn so the UI does not freeze |
+| `usePipelineDiagnostics.ts` | `usePipelineDiagnostics()` | Watcher/poll pipeline freeze diagnostics; counters surfaced in `layout/DebugPanel.vue` |
 
 #### Page Orchestration
 | File | Exports | Purpose |
@@ -241,7 +243,7 @@ interface DashboardStats { total, open, inProgress, blocked, closed, ready, byTy
 
 **SQLite schema (v4):** `issues`, `comments`, `labels`, `dependencies`, `issues_fts` (FTS5), `conflicts`, `schema_version`
 
-### Tauri Commands (75 total)
+### Tauri Commands (65 total)
 
 #### Issue Operations
 | Command | bd CLI | Special Logic |
@@ -440,7 +442,19 @@ Git Sync (built-in backend):
 | `tests/utils/dashboard-stats.test.ts` | 11 | `computeStatsFromIssues` |
 | `tests/utils/probe-adapter.test.ts` | 8 | `matchProbeProject` — path matching with `.beads` suffix normalization |
 | `tests/utils/hash.test.ts` | 6 | `hashPath` |
+| `tests/composables/useChangeDetection.test.ts` | 8 | Queue-based single-flight watcher handler, cooldown behavior |
+| `tests/composables/usePollScheduler.test.ts` | 6 | Poll backpressure scheduling under churn |
+| `tests/composables/usePipelineDiagnostics.test.ts` | 11 | Watcher/poll diagnostic counters |
+| `tests/composables/churn-stress.test.ts` | 4 | Sustained rapid watcher triggers stay bounded |
+| `tests/utils/bd-executor.test.ts` | 9 | `unwrapBrEnvelope` — br >= 0.1.30 paginated envelope |
 
-**Total: 214 tests** (10 files) | **Strategy**: Extract pure functions from composables into `app/utils/` for unit testing. Composables remain thin reactive wrappers.
+**Total: 265 tests** (15 files) | **Strategy**: Extract pure functions from composables into `app/utils/` for unit testing. Composables remain thin reactive wrappers.
 
 **Rust tests**: Tracker modules contain `#[cfg(test)]` blocks — run via `cargo test` in `src-tauri/`.
+
+### Stress Testing
+
+| File | Purpose |
+|------|---------|
+| `scripts/churn-stress.sh` | Generates sustained `.beads/` churn to exercise the watcher/poll pipeline |
+| `docs/churn-stress-runbook.md` | Runbook for the churn stress test and reading the diagnostics output |

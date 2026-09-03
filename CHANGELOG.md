@@ -1,5 +1,49 @@
 # Changelog
 
+## [2.25.0] - 2026-09-03
+
+> Requires **bd 0.49.x**. Recommended CLI: **br** up to 0.1.33.
+
+Combined fork release. Merges the stability, KPI, filter and search work from the
+[drkatz fork](https://github.com/drkatz/beads-task-issue-tracker) (branch
+`pr/stability-kpi-filter-search-improvements`, 35 commits) on top of this fork's 1.24.3/1.24.4 fixes.
+
+The version line moves to **2.x** so this fork can never collide with upstream or other 1.x forks.
+
+### Features
+- **Column reordering** in the issue table's column settings dropdown
+- **Clicking the *All* KPI tile** now adds every status filter to the filter bar
+- **Poll backpressure scheduler** (`usePollScheduler`) — prevents UI freezes during high issue churn
+- **Pipeline diagnostics** (`usePipelineDiagnostics`) — watcher/poll freeze diagnostics surfaced in the debug panel
+- **Copy ID button** on dashboard quick lists
+- **Churn stress test + runbook** (`scripts/churn-stress.sh`, `docs/churn-stress-runbook.md`)
+
+### Behavior changes
+- **Default filter now shows all issues** when no filters are active (previously a narrower default)
+- **Workflow KPI tile is first and selected on startup**, and stays active when the status filter is empty
+- **Total KPI tile renamed to *All***; dashboard KPI cards reordered in the project panel
+- **Blocked-by info moved into the StatusBadge tooltip** — the separate `Ban` icon column is gone
+- **Obsolete `deleted` status handling removed**; `deferred`, `pinned` and `hooked` are now recognised statuses
+
+### Fixes
+- **Text search now respects active filters** instead of bypassing them
+- **Active filter chips are shown while a search is active**
+- **Open KPI count aligned with Open filter results**; dependency-blocked issues excluded from the Open tile
+- **Workflow KPI aligned with default issue filtering**
+- **`blockedBy` computed from `dependencies`** in the Nitro server transformer (mirrors the Rust logic)
+- **Stale blocked indicators** from closed blockers cleared
+- **Blocked issue mapping** corrected in filters and dashboard
+- **KPI tile layout**: flex sizing, consistent horizontal padding, no flex-shrink, 90px minimum width, no text truncation, selection ring no longer clipped, responsive wrapping in the left sidebar
+- **`DropdownMenuCheckboxItem`** now uses `:model-value` instead of the non-existent `:checked` prop
+- **Window controls** no longer overlap top-right buttons on Linux/Windows (right padding added; window is now created programmatically so `titleBarStyle: Overlay` applies on macOS only)
+- **Watcher churn floods** coalesced in the Rust backend; debounce + `isProcessing` replaced with a queue-based single-flight handler
+- **Tauri dev startup stability** across terminals
+
+### Merge fixes
+Both forks shipped with a red `vue-tsc` gate; resolved here so `pnpm test && npx vue-tsc --noEmit` passes clean:
+- `ParentIssue` / `ChildIssue` gained an optional `blockedBy?: string[]`, referenced by the new StatusBadge tooltip. Note the Rust `ParentIssue`/`ChildIssue` structs do not yet populate it, so dependency-derived blocking is still not shown on parent/child rows — only status-derived blocking is
+- `BdRawIssue` is now exported and used to parameterise `unwrapBrEnvelope<BdRawIssue>()` in `list.get.ts` and `ready.get.ts`
+
 ## [1.24.4] - 2026-04-08
 
 > Requires **bd 0.49.x**. Recommended CLI: **br** up to 0.1.33.
