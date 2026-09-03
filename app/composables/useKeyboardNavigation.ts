@@ -26,6 +26,25 @@ export function useKeyboardNavigation(options: UseKeyboardNavigationOptions) {
     })
   }
 
+  /**
+   * Enter the list from outside it (e.g. Ctrl+Down in the search box): keep the
+   * current item when it is still in the list, otherwise take the first one.
+   * Returns the focused id, or null when the list is empty.
+   */
+  const focusFirst = (): string | null => {
+    const ids = itemIds.value
+    if (ids.length === 0) {
+      focusedId.value = null
+      return null
+    }
+
+    if (!focusedId.value || !ids.includes(focusedId.value)) {
+      focusedId.value = ids[0]!
+    }
+    scrollToFocused(focusedId.value)
+    return focusedId.value
+  }
+
   const handleKeydown = (event: KeyboardEvent) => {
     // Don't interfere with typing in form elements
     const tag = (event.target as HTMLElement)?.tagName
@@ -85,5 +104,5 @@ export function useKeyboardNavigation(options: UseKeyboardNavigationOptions) {
     }
   })
 
-  return { focusedId, setFocused, handleKeydown, isFocused }
+  return { focusedId, setFocused, focusFirst, handleKeydown, isFocused }
 }

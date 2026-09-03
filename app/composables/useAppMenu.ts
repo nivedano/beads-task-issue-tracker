@@ -1,7 +1,10 @@
+import { matchesShortcut, SHORTCUT_LOGS, SHORTCUT_SETTINGS } from '~/utils/shortcuts'
+
 // Global state for dialog/panel visibility
 const showUpdateDialog = ref(false)
 const showAboutDialog = ref(false)
 const showSettingsDialog = ref(false)
+const showHelpDialog = ref(false)
 const showDebugPanel = ref(false)
 let menuInitialized = false
 
@@ -13,6 +16,7 @@ const usesInAppMenuBar = !isMacOS
 export function useAppMenu() {
   const openAbout = () => { showAboutDialog.value = true }
   const openSettings = () => { showSettingsDialog.value = true }
+  const openHelp = () => { showHelpDialog.value = true }
   const openUpdate = () => { showUpdateDialog.value = true }
   const toggleLogs = () => { showDebugPanel.value = !showDebugPanel.value }
 
@@ -125,15 +129,13 @@ export function useAppMenu() {
   // the File menu advertises have to be handled by the webview.
   const registerAccelerators = () => {
     window.addEventListener('keydown', (event) => {
-      if (!(event.ctrlKey || event.metaKey) || event.altKey) return
-
-      if (!event.shiftKey && event.key === ',') {
+      if (matchesShortcut(event, SHORTCUT_SETTINGS)) {
         event.preventDefault()
         openSettings()
         return
       }
 
-      if (event.shiftKey && event.key.toLowerCase() === 'l') {
+      if (matchesShortcut(event, SHORTCUT_LOGS)) {
         event.preventDefault()
         toggleLogs()
       }
@@ -159,10 +161,12 @@ export function useAppMenu() {
     showUpdateDialog,
     showAboutDialog,
     showSettingsDialog,
+    showHelpDialog,
     showDebugPanel,
     usesInAppMenuBar,
     openAbout,
     openSettings,
+    openHelp,
     openUpdate,
     toggleLogs,
     initializeMenu,

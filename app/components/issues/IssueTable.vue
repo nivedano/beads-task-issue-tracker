@@ -351,7 +351,7 @@ const issueMap = computed(() => {
   return map
 })
 
-const { focusedId, setFocused, handleKeydown, isFocused } = useKeyboardNavigation({
+const { focusedId, setFocused, focusFirst, handleKeydown, isFocused } = useKeyboardNavigation({
   itemIds: flatVisibleIds,
   onSelect: (id) => {
     const issue = issueMap.value.get(id)
@@ -361,10 +361,35 @@ const { focusedId, setFocused, handleKeydown, isFocused } = useKeyboardNavigatio
     emit('toggle-pin', id)
   },
 })
+
+// Entry point for "jump into the results" from outside the table (Ctrl+Down in
+// the search box). Focusing the scroll container hands arrow keys and Enter to
+// handleKeydown; an empty list stays a no-op so focus remains where it was.
+const containerRef = ref<HTMLElement | null>(null)
+
+const focusContainer = () => {
+  const container = containerRef.value
+  if (!container) return false
+
+  const active = document.activeElement
+  if (active instanceof HTMLElement && active !== document.body && active !== container) {
+    active.blur()
+  }
+
+  container.focus({ preventScroll: true })
+  return document.activeElement === container
+}
+
+const focusList = () => {
+  if (focusFirst() === null) return false
+  return focusContainer()
+}
+
+defineExpose({ focusList })
 </script>
 
 <template>
-  <div class="h-full rounded border border-border overflow-auto outline-none" tabindex="0" @keydown="handleKeydown" @click.self="$emit('deselect')">
+  <div ref="containerRef" class="h-full rounded border border-border overflow-auto outline-none" tabindex="0" @keydown="handleKeydown" @click.self="$emit('deselect')">
     <Table @click.self="$emit('deselect')">
       <TableHeader>
         <TableRow class="bg-secondary/30 hover:bg-secondary/30">

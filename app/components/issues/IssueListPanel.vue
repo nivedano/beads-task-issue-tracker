@@ -48,6 +48,20 @@ const emit = defineEmits<{
   'toggle-pin': [issueId: string]
 }>()
 
+const toolbarRef = ref<InstanceType<typeof IssuesToolbar> | null>(null)
+const tableRef = ref<InstanceType<typeof IssueTable> | null>(null)
+
+const focusSearch = () => {
+  return toolbarRef.value?.focusSearch() ?? false
+}
+
+// Ctrl+Down in the search box moves keyboard focus into the results list.
+const focusResults = () => {
+  return tableRef.value?.focusList() ?? false
+}
+
+defineExpose({ focusSearch, focusResults })
+
 const handleSort = (field: string | null, direction: 'asc' | 'desc') => {
   emit('sort', field, direction)
 }
@@ -56,6 +70,7 @@ const handleSort = (field: string | null, direction: 'asc' | 'desc') => {
 <template>
   <div class="p-4 border-b border-border space-y-3">
     <IssuesToolbar
+      ref="toolbarRef"
       v-model:search="searchValue"
       :selected-statuses="filters.status"
       :selected-types="filters.type"
@@ -78,6 +93,7 @@ const handleSort = (field: string | null, direction: 'asc' | 'desc') => {
       @toggle-priority="emit('toggle-priority', $event)"
       @toggle-label="emit('toggle-label', $event)"
       @toggle-assignee="emit('toggle-assignee', $event)"
+      @focus-results="focusResults"
     />
 
     <FilterChips
@@ -97,6 +113,7 @@ const handleSort = (field: string | null, direction: 'asc' | 'desc') => {
 
   <div class="flex-1 overflow-auto p-4">
     <IssueTable
+      ref="tableRef"
       v-model:selected-ids="selectedIds"
       :issues="issues"
       :grouped-issues="groupedIssues"

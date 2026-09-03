@@ -34,6 +34,7 @@ defineProps<{
 
 defineEmits<{
   add: []
+  'focus-results': []
   delete: []
   toggleMultiSelect: []
   toggleStatus: [status: IssueStatus]
@@ -44,6 +45,26 @@ defineEmits<{
   'update:columns': [columns: ColumnConfig[]]
   resetColumns: []
 }>()
+
+// Search is the primary entry point: it takes focus on mount and Ctrl+F brings
+// it back from anywhere in the app.
+const searchFieldRef = ref<HTMLElement | null>(null)
+
+const focusSearch = (): boolean => {
+  const input = searchFieldRef.value?.querySelector('input')
+  if (!input) return false
+  input.focus()
+  input.select()
+  return document.activeElement === input
+}
+
+defineExpose({ focusSearch })
+
+onMounted(() => {
+  // Only claim focus when nothing else has it (a startup dialog, for instance).
+  const active = document.activeElement
+  if (!active || active === document.body) focusSearch()
+})
 
 // Track which filter dropdown is currently open (exclusive group)
 type FilterType = 'type' | 'label' | 'status' | 'priority' | 'assignee' | 'exclusion' | null
@@ -99,7 +120,7 @@ const handleFilterClick = (filter: FilterType) => {
           <TooltipContent>Toggle multi-select</TooltipContent>
         </Tooltip>
 
-      <div class="relative flex-1">
+      <div ref="searchFieldRef" class="relative flex-1">
         <svg
           class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground"
           viewBox="0 0 24 24"
@@ -110,11 +131,13 @@ const handleFilterClick = (filter: FilterType) => {
           <circle cx="11" cy="11" r="8" />
           <line x1="21" y1="21" x2="16.65" y2="16.65" />
         </svg>
+        <!-- Ctrl+Down hands keyboard focus to the results list -->
         <Input
           v-model="search"
           type="search"
           placeholder="Search issues..."
           class="pl-10 h-8 text-xs"
+          @keydown.ctrl.down.prevent="$emit('focus-results')"
         />
       </div>
 

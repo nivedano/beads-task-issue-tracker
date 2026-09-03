@@ -22,6 +22,7 @@ const props = defineProps<{
 const { beadsPath, setPath, clearPath } = useBeadsPath()
 const { projects, sortedProjects, sortMode, hasReordered, removeProject, reorderProjects, setSortMode, resetSortOrder } = useProjects()
 
+const rootRef = ref<HTMLElement | null>(null)
 const projectsListRef = ref<HTMLElement | null>(null)
 let sortableInstance: Sortable | null = null
 
@@ -90,13 +91,27 @@ const initSortable = () => {
 
 // Keyboard navigation for project list
 const projectPaths = computed(() => sortedProjects.value.map(p => p.path))
-const { setFocused: setProjectFocused, handleKeydown: handleProjectKeydown, isFocused: isProjectFocused } = useKeyboardNavigation({
+const { setFocused: setProjectFocused, focusFirst: focusFirstProject, handleKeydown: handleProjectKeydown, isFocused: isProjectFocused } = useKeyboardNavigation({
   itemIds: projectPaths,
   onSelect: (path) => handleSelectProject(path),
   dataAttribute: 'data-path',
 })
 
 const isProjectsCollapsed = useLocalStorage('beads:favoritesCollapsed', false)
+
+const focusProjects = async (): Promise<boolean> => {
+  isProjectsCollapsed.value = false
+  await nextTick()
+
+  if (projectsListRef.value && focusFirstProject()) {
+    projectsListRef.value.focus()
+    return true
+  }
+
+  const selectProjectButton = rootRef.value?.querySelector<HTMLElement>('[data-select-project]')
+  selectProjectButton?.focus()
+  return !!selectProjectButton
+}
 
 onMounted(initSortable)
 onBeforeUnmount(() => {
@@ -141,9 +156,6 @@ const isCurrentExposed = computed(() => {
   return isExposed(beadsPath.value)
 })
 
-// Expose to parent components
-defineExpose({ isPickerOpen, isCurrentExposed })
-
 const handleSelectFolder = (path: string) => {
   setPath(path)
   emit('change')
@@ -155,6 +167,61 @@ const handleSelectProject = (path: string) => {
   setPath(path)
   emit('change')
 }
+
+let pendingProjectNumber = ''
+let projectNumberTimer: ReturnType<typeof setTimeout> | null = null
+
+const clearPendingProjectNumber = () => {
+  pendingProjectNumber = ''
+  if (projectNumberTimer) clearTimeout(projectNumberTimer)
+  projectNumberTimer = null
+}
+
+const commitProjectNumber = () => {
+  const project = sortedProjects.value[Number(pendingProjectNumber) - 1]
+  clearPendingProjectNumber()
+  if (!project) return
+  setProjectFocused(project.path)
+  handleSelectProject(project.path)
+}
+
+const handleProjectsKeydown = (event: KeyboardEvent) => {
+  const isPlainDigit = /^\d$/.test(event.key) && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey
+  if (!isPlainDigit) {
+    clearPendingProjectNumber()
+    handleProjectKeydown(event)
+    return
+  }
+
+  event.preventDefault()
+  if (props.isLoading) return
+
+  const nextNumber = `${pendingProjectNumber}${event.key}`.replace(/^0+/, '')
+  const ordinal = Number(nextNumber)
+  if (!nextNumber || ordinal < 1 || ordinal > sortedProjects.value.length) {
+    clearPendingProjectNumber()
+    return
+  }
+
+  pendingProjectNumber = nextNumber
+  const hasLongerMatch = sortedProjects.value.some((_, index) => {
+    const candidate = String(index + 1)
+    return candidate !== nextNumber && candidate.startsWith(nextNumber)
+  })
+
+  if (!hasLongerMatch) {
+    commitProjectNumber()
+    return
+  }
+
+  if (projectNumberTimer) clearTimeout(projectNumberTimer)
+  projectNumberTimer = setTimeout(commitProjectNumber, 500)
+}
+
+onBeforeUnmount(clearPendingProjectNumber)
+
+// Parent-level shortcuts use these same controls rather than duplicating state.
+defineExpose({ isPickerOpen, isCurrentExposed, focusProjects })
 
 const handleRemoveProject = (path: string, event: Event) => {
   event.stopPropagation()
@@ -297,10 +364,10 @@ watch(() => projects.value.length, () => {
 </script>
 
 <template>
-  <div class="space-y-2">
+  <div ref="rootRef" class="space-y-2">
     <!-- Action buttons -->
     <div class="flex items-center gap-1">
-      <Button variant="outline" size="sm" class="flex-1 h-7 text-xs" @click="isPickerOpen = true">
+      <Button data-select-project variant="outline" size="sm" class="flex-1 h-7 text-xs" @click="isPickerOpen = true">
         <svg class="w-3 h-3 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
         </svg>
@@ -384,9 +451,9 @@ watch(() => projects.value.length, () => {
           </TooltipProvider>
         </template>
       </div>
-      <div v-show="!isProjectsCollapsed" ref="projectsListRef" class="flex flex-col gap-1 outline-none" tabindex="0" @keydown="handleProjectKeydown">
+      <div v-show="!isProjectsCollapsed" ref="projectsListRef" class="flex flex-col gap-1 rounded outline-none focus-visible:ring-2 focus-visible:ring-primary/50" tabindex="0" aria-label="Projects" @keydown="handleProjectsKeydown">
         <div
-          v-for="proj in sortedProjects"
+          v-for="(proj, projectIndex) in sortedProjects"
           :key="proj.path"
           :data-path="proj.path"
           class="relative group rounded"
@@ -399,6 +466,7 @@ watch(() => projects.value.length, () => {
             class="h-7 justify-start text-xs gap-0 w-full pr-6"
             :class="{ 'opacity-50 cursor-wait': isLoading && beadsPath !== proj.path }"
             :disabled="isLoading"
+            :aria-keyshortcuts="String(projectIndex + 1)"
             @click="handleSelectProject(proj.path)"
           >
             <!-- Drag handle -->
@@ -459,6 +527,7 @@ watch(() => projects.value.length, () => {
               <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
             </svg>
             <span class="truncate flex-1 text-left">{{ proj.name }}</span>
+            <kbd class="ml-2 shrink-0 text-right font-mono text-[10px] tabular-nums opacity-60 transition-opacity group-hover:opacity-0" aria-hidden="true">{{ projectIndex + 1 }}</kbd>
           </Button>
           <!-- Remove button - outside Button to avoid click capture -->
           <button

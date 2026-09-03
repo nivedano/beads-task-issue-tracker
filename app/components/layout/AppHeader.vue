@@ -26,7 +26,7 @@ const { isDark, currentTheme, cycleTheme } = useTheme()
 const { zoomLevel, zoomIn, zoomOut, resetZoom, canZoomIn, canZoomOut } = useZoom()
 const { startDragging } = useTauriWindow()
 const { isMacOS, isWindows } = usePlatform()
-const { usesInAppMenuBar } = useAppMenu()
+const { usesInAppMenuBar, openHelp } = useAppMenu()
 
 // Window controls only make sense for the undecorated Tauri window, not in a browser tab.
 const showWindowControls = isWindows && isTauri()
@@ -123,6 +123,34 @@ const handleZoomIn = (event: MouseEvent) => {
 
     <!-- Zoom and Theme controls (right, absolute positioned) - no-drag to keep buttons clickable -->
     <div class="absolute flex items-center gap-1 app-no-drag" :class="showWindowControls ? 'right-36' : 'right-4'">
+      <!-- Help and keyboard shortcuts -->
+      <Tooltip>
+        <TooltipTrigger as-child>
+          <Button
+            variant="ghost"
+            size="icon"
+            class="h-8 w-8"
+            aria-label="Help and keyboard shortcuts"
+            @click="openHelp"
+          >
+            <svg
+              class="w-4 h-4"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <circle cx="12" cy="12" r="10" />
+              <path d="M9.1 9a3 3 0 1 1 5.83 1c0 2-3 2-3 4" />
+              <path d="M12 18h.01" />
+            </svg>
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>Help &amp; shortcuts (F1)</TooltipContent>
+      </Tooltip>
+
       <!-- Zoom controls -->
       <Tooltip>
         <TooltipTrigger as-child>

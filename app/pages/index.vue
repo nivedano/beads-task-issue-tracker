@@ -1,6 +1,18 @@
 <script setup lang="ts">
 import type { Issue, IssueStatus, UpdateIssuePayload } from '~/types/issue'
 import { isIssueBlocked } from '~/utils/issue-helpers'
+import {
+  matchesShortcut,
+  SHORTCUT_DASHBOARD_PANEL,
+  SHORTCUT_DELETE_ISSUE,
+  SHORTCUT_DETAILS_PANEL,
+  SHORTCUT_FIND,
+  SHORTCUT_FOCUS_DASHBOARD,
+  SHORTCUT_FOCUS_DETAILS,
+  SHORTCUT_FOCUS_ISSUE_LIST,
+  SHORTCUT_NEW_ISSUE,
+  SHORTCUT_SELECT_PROJECT,
+} from '~/utils/shortcuts'
 
 // Layout components
 import AppHeader from '~/components/layout/AppHeader.vue'
@@ -133,6 +145,10 @@ const showOnboarding = computed(() => {
 // Refs to PathSelector to open folder picker (desktop and mobile)
 const pathSelectorRef = ref<InstanceType<typeof PathSelector> | null>(null)
 const mobilePathSelectorRef = ref<InstanceType<typeof PathSelector> | null>(null)
+const desktopIssueListRef = ref<InstanceType<typeof IssueListPanel> | null>(null)
+const mobileIssueListRef = ref<InstanceType<typeof IssueListPanel> | null>(null)
+const leftPanelRef = ref<HTMLElement | null>(null)
+const rightPanelRef = ref<HTMLElement | null>(null)
 
 // Onboarding folder picker state
 const isOnboardingPickerOpen = ref(false)
@@ -175,6 +191,123 @@ const editId = computed(() => {
 // Mobile state
 const isMobileView = ref(false)
 const mobilePanel = ref<'dashboard' | 'issues' | 'details'>('issues')
+
+const focusDashboard = () => {
+  if (isEditMode.value || isCreatingNew.value) return
+  if (isMobileView.value) {
+    mobilePanel.value = 'dashboard'
+  } else {
+    isLeftSidebarOpen.value = true
+  }
+
+  nextTick(() => {
+    const selector = isMobileView.value ? mobilePathSelectorRef.value : pathSelectorRef.value
+    if (selector) {
+      void selector.focusProjects()
+    } else {
+      leftPanelRef.value?.focus()
+    }
+  })
+}
+
+const focusDetails = () => {
+  if (isMobileView.value) {
+    mobilePanel.value = 'details'
+  } else {
+    isRightSidebarOpen.value = true
+  }
+  nextTick(() => rightPanelRef.value?.focus())
+}
+
+const focusIssueList = () => {
+  if (isEditMode.value || isCreatingNew.value) return
+  const needsPanelSwap = isMobileView.value && mobilePanel.value !== 'issues'
+  if (isMobileView.value) mobilePanel.value = 'issues'
+
+  const focusRenderedIssueList = () => {
+    const issueList = isMobileView.value ? mobileIssueListRef.value : desktopIssueListRef.value
+    return issueList?.focusResults() ?? false
+  }
+
+  if (!needsPanelSwap && focusRenderedIssueList()) return
+  nextTick(() => { focusRenderedIssueList() })
+}
+
+const focusIssueSearch = () => {
+  if (isEditMode.value || isCreatingNew.value) return
+  const needsPanelSwap = isMobileView.value && mobilePanel.value !== 'issues'
+  if (isMobileView.value) mobilePanel.value = 'issues'
+
+  const focusRenderedSearch = () => {
+    const issueList = isMobileView.value ? mobileIssueListRef.value : desktopIssueListRef.value
+    return issueList?.focusSearch() ?? false
+  }
+
+  if (!needsPanelSwap && focusRenderedSearch()) return
+  nextTick(() => { focusRenderedSearch() })
+}
+
+const handleGlobalShortcut = (event: KeyboardEvent) => {
+  const createsIssue = matchesShortcut(event, SHORTCUT_NEW_ISSUE)
+  const deletesIssue = matchesShortcut(event, SHORTCUT_DELETE_ISSUE)
+  const selectsProject = matchesShortcut(event, SHORTCUT_SELECT_PROJECT)
+  const focusesSearch = matchesShortcut(event, SHORTCUT_FIND)
+  const focusesIssueList = matchesShortcut(event, SHORTCUT_FOCUS_ISSUE_LIST)
+  const focusesDashboard = matchesShortcut(event, SHORTCUT_FOCUS_DASHBOARD)
+  const focusesDetails = matchesShortcut(event, SHORTCUT_FOCUS_DETAILS)
+  const togglesDashboard = matchesShortcut(event, SHORTCUT_DASHBOARD_PANEL)
+  const togglesDetails = matchesShortcut(event, SHORTCUT_DETAILS_PANEL)
+  if (!createsIssue && !deletesIssue && !selectsProject && !focusesSearch && !focusesIssueList && !focusesDashboard && !focusesDetails && !togglesDashboard && !togglesDetails) return
+
+  event.preventDefault()
+
+  if (createsIssue) {
+    handleAddIssue()
+    return
+  }
+
+  if (deletesIssue) {
+    void handleDeleteIssue()
+    return
+  }
+
+  if (selectsProject) {
+    openFolderPicker()
+    return
+  }
+
+  if (focusesSearch) {
+    focusIssueSearch()
+    return
+  }
+
+  if (focusesIssueList) {
+    focusIssueList()
+    return
+  }
+
+  if (focusesDashboard) {
+    focusDashboard()
+    return
+  }
+
+  if (focusesDetails) {
+    focusDetails()
+    return
+  }
+
+  if (isMobileView.value) {
+    const target = togglesDashboard ? 'dashboard' : 'details'
+    mobilePanel.value = mobilePanel.value === target ? 'issues' : target
+    return
+  }
+
+  if (togglesDashboard) {
+    isLeftSidebarOpen.value = !isLeftSidebarOpen.value
+  } else {
+    isRightSidebarOpen.value = !isRightSidebarOpen.value
+  }
+}
 
 // Check viewport size
 const checkViewport = () => {
@@ -281,6 +414,7 @@ onMounted(async () => {
   checkViewport()
   if (import.meta.client) {
     window.addEventListener('resize', checkViewport)
+    window.addEventListener('keydown', handleGlobalShortcut, true)
 
     // Detect CLI client (br vs bd) for feature gating
     await initCliClient()
@@ -337,6 +471,7 @@ onMounted(async () => {
 onUnmounted(() => {
   if (import.meta.client) {
     window.removeEventListener('resize', checkViewport)
+    window.removeEventListener('keydown', handleGlobalShortcut, true)
     stopListening()
     stopPolling()
     cancelScheduledPoll()
@@ -825,10 +960,12 @@ watch(
     <div v-if="!isMobileView" class="flex overflow-hidden">
       <!-- Left Sidebar - Dashboard (hidden in edit mode) -->
       <aside
+        ref="leftPanelRef"
         v-show="!(isEditMode || isCreatingNew)"
-        class="border-r border-border bg-card flex flex-col relative"
+        class="border-r border-border bg-card flex flex-col relative outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/50"
         :class="{ 'transition-all duration-300': !isResizing }"
         :style="isLeftSidebarOpen ? { width: `${leftSidebarWidth}px` } : { width: '48px' }"
+        tabindex="-1"
       >
         <!-- Resize handle -->
         <div
@@ -927,6 +1064,7 @@ watch(
         <!-- Normal: Issues Toolbar + Table -->
         <template v-else>
           <IssueListPanel
+            ref="desktopIssueListRef"
             v-model:search="searchValue"
             v-model:selected-ids="selectedIds"
             :filters="{ status: filters.status, type: filters.type, priority: filters.priority, labels: filters.labels, assignee: filters.assignee }"
@@ -974,14 +1112,16 @@ watch(
 
       <!-- Right Sidebar - Details (hidden when no selection and not in edit mode) -->
       <aside
-        v-if="selectedIssue || isEditMode || isCreatingNew"
-        class="bg-card flex flex-col relative overflow-hidden"
+        v-if="selectedIssue || isEditMode || isCreatingNew || isRightSidebarOpen"
+        ref="rightPanelRef"
+        class="bg-card flex flex-col relative overflow-hidden outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/50"
         :class="[
           { 'transition-all duration-300': !isResizing && !(isEditMode || isCreatingNew) },
           { 'border-l border-border': !(isEditMode || isCreatingNew) },
           { 'w-full lg:w-1/2 lg:min-w-2xl mx-auto my-4 border border-border rounded-lg': isEditMode || isCreatingNew }
         ]"
         :style="(isEditMode || isCreatingNew) ? {} : (isRightSidebarOpen ? { width: `${rightSidebarWidth}px` } : { width: '48px' })"
+        tabindex="-1"
       >
         <!-- Resize handle -->
         <div
@@ -1118,7 +1258,7 @@ watch(
       <!-- Mobile Panels -->
       <!-- Dashboard Panel -->
       <ScrollArea v-if="mobilePanel === 'dashboard'" class="flex-1">
-        <div class="p-4 space-y-6">
+        <div ref="leftPanelRef" class="p-4 space-y-6 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/50" tabindex="-1">
           <PathSelector v-if="!showOnboarding" ref="mobilePathSelectorRef" :is-loading="isLoading" @change="handlePathChange" @reset="handleReset" />
 
           <DashboardContent
@@ -1150,6 +1290,7 @@ watch(
         <!-- Normal: Issues Toolbar and Table -->
         <IssueListPanel
           v-if="!showOnboarding"
+          ref="mobileIssueListRef"
           v-model:search="searchValue"
           v-model:selected-ids="selectedIds"
           :filters="{ status: filters.status, type: filters.type, priority: filters.priority, labels: filters.labels, assignee: filters.assignee }"
@@ -1191,7 +1332,7 @@ watch(
       </div>
 
       <!-- Details Panel -->
-      <div v-else-if="mobilePanel === 'details'" class="flex-1 flex flex-col overflow-hidden">
+      <div v-else-if="mobilePanel === 'details'" ref="rightPanelRef" class="flex-1 flex flex-col overflow-hidden outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/50" tabindex="-1">
         <!-- Fixed header for issue preview -->
         <IssueDetailHeader
           v-if="selectedIssue && !isEditMode && !isCreatingNew"

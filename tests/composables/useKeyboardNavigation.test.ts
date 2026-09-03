@@ -168,4 +168,39 @@ describe('useKeyboardNavigation', () => {
     expect(isFocused('a')).toBe(true)
     expect(isFocused('b')).toBe(false)
   })
+
+  it('focusFirst takes the first item when nothing is focused', () => {
+    const ids = computed(() => ['a', 'b', 'c'])
+    const { focusedId, focusFirst } = useKeyboardNavigation({ itemIds: ids })
+
+    expect(focusFirst()).toBe('a')
+    expect(focusedId.value).toBe('a')
+  })
+
+  it('focusFirst keeps the current item when it is still in the list', () => {
+    const ids = computed(() => ['a', 'b', 'c'])
+    const { focusedId, focusFirst, setFocused } = useKeyboardNavigation({ itemIds: ids })
+
+    setFocused('b')
+    expect(focusFirst()).toBe('b')
+    expect(focusedId.value).toBe('b')
+  })
+
+  it('focusFirst falls back to the first item when the current one is gone', () => {
+    const items = ref(['a', 'b'])
+    const ids = computed(() => items.value)
+    const { focusedId, focusFirst, setFocused } = useKeyboardNavigation({ itemIds: ids })
+
+    setFocused('z')
+    expect(focusFirst()).toBe('a')
+    expect(focusedId.value).toBe('a')
+  })
+
+  it('focusFirst returns null for an empty list', () => {
+    const ids = computed(() => [] as string[])
+    const { focusedId, focusFirst } = useKeyboardNavigation({ itemIds: ids })
+
+    expect(focusFirst()).toBeNull()
+    expect(focusedId.value).toBeNull()
+  })
 })

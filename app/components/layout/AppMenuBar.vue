@@ -201,6 +201,7 @@ const separatorClass = '-mx-1 my-1 h-px bg-border'
           </MenubarItem>
           <MenubarItem :class="itemClass" @select="toggleMaximizeWindow">
             Maximize
+            <span :class="shortcutClass">Alt+Enter</span>
           </MenubarItem>
           <MenubarSeparator :class="separatorClass" />
           <MenubarItem :class="itemClass" @select="closeWindow">
