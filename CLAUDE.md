@@ -17,13 +17,13 @@ Consult these before starting any task.
 ### Session Completion
 All steps mandatory. Work is NOT complete until `git push` succeeds.
 1. File issues for remaining work
-2. Run quality gates (if code changed): `pnpm test && npx vue-tsc --noEmit`
+2. Run quality gates (if code changed): `bun run test && bunx vue-tsc --noEmit`
 3. Close finished issues
 4. `git pull --rebase && bd sync && git push && git status`
 
 ### Testing
-- **Run before committing**: `pnpm test` — runs all Vitest unit tests
-- **Watch mode**: `pnpm test:watch` — for development
+- **Run before committing**: `bun run test` — runs all Vitest unit tests
+- **Watch mode**: `bun run test:watch` — for development
 - Tests live in `tests/` mirroring `app/` structure (e.g., `tests/utils/markdown.test.ts` → `app/utils/markdown.ts`)
 - Pure logic must be extracted into `app/utils/` for testability (not buried in composables)
 - When adding or modifying pure logic (filtering, sorting, parsing, transformations), add or update corresponding tests
@@ -59,7 +59,7 @@ All steps mandatory. Work is NOT complete until `git push` succeeds.
 - **Log file**: `~/Library/Logs/com.beads.manager/beads.log` — readable via `tail -f` or in the app.
 
 ### Dev Server
-Always kill zombies before starting: `pkill -f "beads-issue-tracker" 2>/dev/null && pnpm tauri:dev`
+Always kill zombies before starting: `pkill -f "beads-issue-tracker" 2>/dev/null && bun run tauri:dev`
 
 ## GitHub — Account: w3dev33
 

@@ -179,13 +179,13 @@ git clone https://github.com/w3dev33/beads-task-issue-tracker.git
 cd beads-task-issue-tracker
 
 # Install dependencies
-pnpm install
+bun install
 
 # Run in development mode
-pnpm dev
+bun run dev
 
 # Build for production
-pnpm tauri:build
+bun run tauri:build
 ```
 
 ## Tech Stack

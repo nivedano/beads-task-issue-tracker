@@ -39,8 +39,22 @@ The version line moves to **2.x** so this fork can never collide with upstream o
 - **Watcher churn floods** coalesced in the Rust backend; debounce + `isProcessing` replaced with a queue-based single-flight handler
 - **Tauri dev startup stability** across terminals
 
+### Build tooling
+- **Migrated from pnpm to bun** as the package manager and script runner. `bun install` migrated
+  `pnpm-lock.yaml` to `bun.lock` with zero dependency version drift. Node.js is still required as
+  the *runtime* — `bun run` honours the `#!/usr/bin/env node` shebang in `nuxt`, `vitest` and
+  `vue-tsc`, and Vitest does not support Bun as its runtime
+- `beforeDevCommand` / `beforeBuildCommand` in `tauri.conf.json` now call `bun run`
+- `tauri:dev` / `tauri:build` scripts call the local `@tauri-apps/cli` instead of `cargo tauri`,
+  which is not installed
+- Added `tauri:build:exe` (`tauri build --no-bundle`) for a local usable binary without building
+  the MSI and NSIS installers
+- CI (`.github/workflows/release.yml`) uses `oven-sh/setup-bun` and `bun install --frozen-lockfile`;
+  `actions/setup-node` is retained deliberately, since Node is still the runtime
+- Removed the `packageManager: pnpm@10.0.0` field and `pnpm-lock.yaml`
+
 ### Merge fixes
-Both forks shipped with a red `vue-tsc` gate; resolved here so `pnpm test && npx vue-tsc --noEmit` passes clean:
+Both forks shipped with a red `vue-tsc` gate; resolved here so `bun run test && bunx vue-tsc --noEmit` passes clean:
 - `ParentIssue` / `ChildIssue` gained an optional `blockedBy?: string[]`, referenced by the new StatusBadge tooltip. Note the Rust `ParentIssue`/`ChildIssue` structs do not yet populate it, so dependency-derived blocking is still not shown on parent/child rows — only status-derived blocking is
 - `BdRawIssue` is now exported and used to parameterise `unwrapBrEnvelope<BdRawIssue>()` in `list.get.ts` and `ready.get.ts`
 

@@ -6,8 +6,8 @@
   "build": {
     "frontendDist": "../.output/public",
     "devUrl": "http://localhost:3133",
-    "beforeDevCommand": "pnpm nuxt dev --port 3133",
-    "beforeBuildCommand": "pnpm generate"
+    "beforeDevCommand": "bun run nuxt dev --port 3133",
+    "beforeBuildCommand": "bun run generate"
   },
   "app": {
     "windows": [

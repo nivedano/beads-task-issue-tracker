@@ -37,7 +37,7 @@ Filesystem events
 Run the vitest stress tests:
 
 ```bash
-pnpm test -- tests/composables/churn-stress.test.ts
+bun run test -- tests/composables/churn-stress.test.ts
 ```
 
 These tests simulate 500+ rapid trigger events over simulated time and verify:
@@ -48,7 +48,7 @@ These tests simulate 500+ rapid trigger events over simulated time and verify:
 
 ### Manual (with running app)
 
-1. Start the app: `pnpm tauri:dev`
+1. Start the app: `bun run tauri:dev`
 2. Open the pipeline diagnostics panel (Ctrl+Shift+D or console)
 3. Run the churn script in another terminal:
 
@@ -81,7 +81,7 @@ Under default churn (20 writes/sec for 60s = ~1200 writes):
 
 1. **Increase `WATCHER_MIN_EMIT_INTERVAL_MS`**: Set environment variable before launching:
    ```bash
-   WATCHER_MIN_EMIT_INTERVAL_MS=5000 pnpm tauri:dev
+   WATCHER_MIN_EMIT_INTERVAL_MS=5000 bun run tauri:dev
    ```
    This reduces the rate of events reaching the frontend. Min value: 250ms.
 

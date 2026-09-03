@@ -30,8 +30,9 @@
     "generate": "nuxt generate",
     "preview": "nuxt preview",
     "postinstall": "nuxt prepare",
-    "tauri:dev": "cargo tauri dev",
-    "tauri:build": "cargo tauri build",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build",
+    "tauri:build:exe": "tauri build --no-bundle",
     "test": "vitest run",
     "test:watch": "vitest"
   },
@@ -68,6 +69,5 @@
     "typescript": "^5.9.3",
     "vitest": "^4.0.18",
     "vue-tsc": "^3.2.3"
-  },
-  "packageManager": "pnpm@10.0.0"
+  }
 }

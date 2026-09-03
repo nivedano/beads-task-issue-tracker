@@ -420,13 +420,13 @@ Git Sync (built-in backend):
 | Project settings | `localStorage beads:proj:{hash}:*` | Filters, columns, expanded epics, collapsible states |
 | Global settings | `localStorage beads:*` | Theme, favorites, zoom, notifications |
 | Window | `tauri.conf.json` | 1400x900, min 800x600, overlay title bar |
-| Dev server | Port 3133 | `pnpm nuxt dev --port 3133` |
+| Dev server | Port 3133 | `bun run nuxt dev --port 3133` |
 
 ---
 
 ## Testing
 
-**Framework**: Vitest with jsdom environment | **Config**: `vitest.config.ts` | **Run**: `pnpm test` / `pnpm test:watch`
+**Framework**: Vitest with jsdom environment | **Config**: `vitest.config.ts` | **Run**: `bun run test` / `bun run test:watch`
 
 ### Test Files
 
