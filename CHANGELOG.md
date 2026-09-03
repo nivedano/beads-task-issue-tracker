@@ -16,7 +16,7 @@ The version line moves to **2.x** so this fork can never collide with upstream o
 - **Poll backpressure scheduler** (`usePollScheduler`) — prevents UI freezes during high issue churn
 - **Pipeline diagnostics** (`usePipelineDiagnostics`) — watcher/poll freeze diagnostics surfaced in the debug panel
 - **Copy ID button** on dashboard quick lists
-- **Churn stress test + runbook** (`scripts/churn-stress.sh`, `docs/churn-stress-runbook.md`)
+- **Churn stress test + runbook** (`tools/churn-stress.sh`, `docs/churn-stress-runbook.md`)
 
 ### Behavior changes
 - **Default filter now shows all issues** when no filters are active (previously a narrower default)
@@ -41,6 +41,8 @@ The version line moves to **2.x** so this fork can never collide with upstream o
 - **Tauri dev startup stability** across terminals
 
 ### Build tooling
+- Added `tools/release.ps1` for local optimized executable builds, with quality checks and installer bundles available as explicit opt-ins
+- Renamed the maintenance utility directory from `scripts/` to `tools/`
 - **Migrated from pnpm to bun** as the package manager and script runner. `bun install` migrated
   `pnpm-lock.yaml` to `bun.lock` with zero dependency version drift. Node.js is still required as
   the *runtime* — `bun run` honours the `#!/usr/bin/env node` shebang in `nuxt`, `vitest` and

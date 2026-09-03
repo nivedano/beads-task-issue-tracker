@@ -54,10 +54,10 @@ These tests simulate 500+ rapid trigger events over simulated time and verify:
 
 ```bash
 # Default: 60s of writes every 50ms to .beads/
-./scripts/churn-stress.sh
+./tools/churn-stress.sh
 
 # Custom: 5 minutes at 20ms intervals against a specific directory
-./scripts/churn-stress.sh /path/to/project/.beads 300 20
+./tools/churn-stress.sh /path/to/project/.beads 300 20
 ```
 
 4. Observe the app — it should remain responsive throughout.

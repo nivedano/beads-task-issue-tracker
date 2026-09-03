@@ -188,6 +188,15 @@ bun run dev
 bun run tauri:build
 ```
 
+On Windows, the release helper validates version consistency and builds only the optimized release executable by default. Checks and installer bundles are opt-in, so the default build does not populate Cargo's debug target directory:
+
+```powershell
+./tools/release.ps1
+
+# Run quality checks and build installer bundles
+./tools/release.ps1 -SkipChecks:$false -ExecutableOnly:$false
+```
+
 ## Tech Stack
 
 This application is built with modern web technologies, packaged as a native desktop app:

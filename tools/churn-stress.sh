@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # churn-stress.sh — Generate controlled .beads file churn for stress testing
 #
-# Usage: ./scripts/churn-stress.sh [BEADS_DIR] [DURATION_SECS] [INTERVAL_MS]
+# Usage: ./tools/churn-stress.sh [BEADS_DIR] [DURATION_SECS] [INTERVAL_MS]
 #   BEADS_DIR     — path to .beads directory (default: .beads)
 #   DURATION_SECS — how long to run (default: 60)
 #   INTERVAL_MS   — ms between writes (default: 50)
