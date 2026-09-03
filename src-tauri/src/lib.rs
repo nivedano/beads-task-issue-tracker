@@ -897,20 +897,56 @@ struct AppConfig {
 }
 
 fn default_cli_binary() -> String {
-    // Auto-detect: prefer br (Rust), fallback to bd (Go)
+    // Auto-detect without starting a child process. This runs from Tauri's setup
+    // hook, so waiting for `--version` here prevents the newly-created window
+    // from becoming responsive (and can take several seconds on a cold Windows
+    // process launch).
     for bin in &["br", "bd"] {
-        if let Ok(output) = std::process::Command::new(bin)
-            .arg("--version")
-            .current_dir(std::env::temp_dir())
-            .output()
-        {
-            if output.status.success() {
-                return bin.to_string();
-            }
+        if binary_exists_on_path(bin) {
+            return bin.to_string();
         }
     }
     // Neither found — default to br (will fail later with clear error)
     "br".to_string()
+}
+
+/// Check whether a command can be resolved without launching it.
+///
+/// Use the same extended PATH as normal CLI commands so desktop launches can
+/// find user-local installations even when the graphical environment provides
+/// a minimal PATH.
+fn binary_exists_on_path(binary: &str) -> bool {
+    let binary_path = std::path::Path::new(binary);
+    if binary_path.components().count() > 1 {
+        return binary_path.is_file();
+    }
+
+    #[cfg(target_os = "windows")]
+    let candidate_names: Vec<String> = {
+        if binary_path.extension().is_some() {
+            vec![binary.to_string()]
+        } else {
+            let path_ext =
+                env::var("PATHEXT").unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".to_string());
+            let mut names = vec![binary.to_string()];
+            names.extend(
+                path_ext
+                    .split(';')
+                    .filter(|ext| !ext.is_empty())
+                    .map(|ext| format!("{}{}", binary, ext.to_ascii_lowercase())),
+            );
+            names
+        }
+    };
+
+    #[cfg(not(target_os = "windows"))]
+    let candidate_names = vec![binary.to_string()];
+
+    env::split_paths(&get_extended_path()).any(|directory| {
+        candidate_names
+            .iter()
+            .any(|name| directory.join(name).is_file())
+    })
 }
 
 impl Default for AppConfig {
@@ -5006,27 +5042,6 @@ pub fn run() {
             let config = load_config();
             log::info!("[startup] CLI binary: {}", config.cli_binary);
             *CLI_BINARY.lock().unwrap() = config.cli_binary.clone();
-
-            // Check if CLI binary is accessible
-            // IMPORTANT: Run from /tmp to avoid bd auto-migrating projects in cwd
-            let binary = get_cli_binary();
-            match new_command(&binary)
-                .arg("--version")
-                .current_dir(std::env::temp_dir())
-                .env("PATH", get_extended_path())
-                .output()
-            {
-                Ok(output) if output.status.success() => {
-                    let version = String::from_utf8_lossy(&output.stdout);
-                    log::info!("[startup] {} found: {}", binary, version.trim());
-                }
-                Ok(output) => {
-                    log::warn!("[startup] {} command failed: {}", binary, String::from_utf8_lossy(&output.stderr));
-                }
-                Err(e) => {
-                    log::error!("[startup] {} not found or not executable: {}", binary, e);
-                }
-            }
 
             Ok(())
         })

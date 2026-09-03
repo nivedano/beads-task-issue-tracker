@@ -26,6 +26,7 @@ The version line moves to **2.x** so this fork can never collide with upstream o
 - **Obsolete `deleted` status handling removed**; `deferred`, `pinned` and `hooked` are now recognised statuses
 
 ### Fixes
+- **Responsive desktop startup**: CLI auto-detection now resolves `br`/`bd` from PATH without launching `--version` synchronously in Tauri's setup hook, and the redundant startup validation process has been removed
 - **Text search now respects active filters** instead of bypassing them
 - **Active filter chips are shown while a search is active**
 - **Open KPI count aligned with Open filter results**; dependency-blocked issues excluded from the Open tile
