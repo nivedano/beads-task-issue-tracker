@@ -256,9 +256,9 @@ export function filterIssues(
     const search = searchTerm.toLowerCase()
     result = result.filter(
       (issue) =>
-        issue.title.toLowerCase().includes(search) ||
         issue.id.toLowerCase().includes(search) ||
-        issue.description?.toLowerCase().includes(search),
+        issue.title.toLowerCase().includes(search) ||
+        issue.labels?.some(label => label.toLowerCase().includes(search)),
     )
   }
 

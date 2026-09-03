@@ -74,7 +74,7 @@
 | `useTauriWindow.ts` | `useTauriWindow()` | Window drag for custom title bar, dynamic window title (project name), minimize/maximize/close controls |
 | `usePlatform.ts` | `usePlatform()` | Platform flags (`isMacOS`/`isWindows`/`isLinux`) driving window-chrome differences |
 | `usePinnedIssues.ts` | `usePinnedIssues()` | Pinned issue list with sort modes (`added`, `updated`, `manual`) |
-| `useKeyboardNavigation.ts` | `useKeyboardNavigation()` | Arrow key navigation for issue list with scroll-to-focused |
+| `useKeyboardNavigation.ts` | `useKeyboardNavigation()` | Arrow key navigation for issue list with scroll-to-focused; `focusFirst()` enters the list from outside (Ctrl+Down in search) |
 
 #### Polling & Change Detection
 | File | Exports | Purpose |
@@ -185,6 +185,7 @@
 | `hash.ts` | `hashPath()` | DJB2 hash for per-project storage namespacing |
 | `platform.ts` | `detectPlatform()` | User-agent → `macos`/`windows`/`linux` for window-chrome branching |
 | `edit-commands.ts` | `computePaste()`, `selectedText()` | Selection/caret maths behind the in-app Edit menu |
+| `shortcuts.ts` | `matchesShortcut()`, `SHORTCUT_FIND/SETTINGS/LOGS` | Webview-handled accelerator matching (Ctrl+F, Ctrl+`,`, Ctrl+Shift+L) |
 | `lib/utils.ts` | `cn()` | TailwindCSS class merging (clsx + twMerge) |
 
 ### Types (`app/types/issue.ts`)

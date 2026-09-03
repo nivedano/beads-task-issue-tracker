@@ -377,10 +377,40 @@ describe('filterIssues', () => {
     expect(result).toEqual([])
   })
 
-  it('search matches title, id, and description', () => {
+  it('search matches title', () => {
+    const result = filterIssues(issues, { ...noFilters, search: 'login' }, noExclusions)
+    expect(result.map(i => i.id)).toEqual(['1'])
+  })
+
+  it('search matches id', () => {
+    const withIds = [
+      makeIssue({ id: '0078', title: 'Unrelated' }),
+      makeIssue({ id: '0079', title: 'Also unrelated' }),
+    ]
+    const result = filterIssues(withIds, { ...noFilters, search: '0078' }, noExclusions)
+    expect(result.map(i => i.id)).toEqual(['0078'])
+  })
+
+  it('search matches labels', () => {
+    const result = filterIssues(issues, { ...noFilters, search: 'back' }, noExclusions)
+    expect(result.map(i => i.id)).toEqual(['2'])
+  })
+
+  it('search is case-insensitive across id, title, and labels', () => {
+    const mixed = [
+      makeIssue({ id: 'ABC-1', title: 'Nothing here', labels: [] }),
+      makeIssue({ id: 'zz-2', title: 'FLIGHT asset download', labels: [] }),
+      makeIssue({ id: 'zz-3', title: 'Nothing here', labels: ['Firmware'] }),
+    ]
+    expect(filterIssues(mixed, { ...noFilters, search: 'abc' }, noExclusions).map(i => i.id)).toEqual(['ABC-1'])
+    expect(filterIssues(mixed, { ...noFilters, search: 'flight' }, noExclusions).map(i => i.id)).toEqual(['zz-2'])
+    expect(filterIssues(mixed, { ...noFilters, search: 'FIRM' }, noExclusions).map(i => i.id)).toEqual(['zz-3'])
+  })
+
+  it('search does not match description', () => {
     const withDesc = [makeIssue({ id: 'x', title: 'Nothing', description: 'hidden keyword' })]
     const result = filterIssues(withDesc, { ...noFilters, search: 'keyword' }, noExclusions)
-    expect(result).toHaveLength(1)
+    expect(result).toEqual([])
   })
 
   it('applies exclusion filters', () => {

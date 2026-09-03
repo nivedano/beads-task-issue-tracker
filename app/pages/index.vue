@@ -61,7 +61,7 @@ const { filters, toggleStatus, toggleType, togglePriority, toggleAssignee, clear
 const { columns, toggleColumn, setColumns, resetColumns } = useColumnConfig()
 const { beadsPath, hasStoredPath } = useBeadsPath()
 const { success: notifySuccess, error: notifyError } = useNotification()
-const { isBr, init: initCliClient } = useCliClient()
+const { init: initCliClient } = useCliClient()
 const { projects } = useProjects()
 const {
   issues,
@@ -806,34 +806,20 @@ const handleNavigateToIssue = async (id: string) => {
 }
 
 
-// Search handler - search is prioritary over filters (always starts empty)
-const searchValue = ref('')
-const isSearchActive = computed(() => !!searchValue.value?.trim())
-
-// Debounced br search to avoid spawning too many CLI processes
-let searchTimeout: ReturnType<typeof setTimeout> | null = null
-
-watch(searchValue, async (value) => {
-  if (searchTimeout) clearTimeout(searchTimeout)
-
-  const term = value.trim()
-  if (isBr.value && term) {
-    // br: delegate to full-text search via Tauri — skip client-side setSearch
-    // to avoid flickering (client-side filter would render first, then br results replace)
-    searchTimeout = setTimeout(async () => {
-      const { searchIssues } = useIssues()
-      await searchIssues(term)
-    }, 300)
-  } else if (isBr.value && !term) {
-    // br: search cleared — restore the full list
-    setSearch('')
-    await fetchIssues()
-  } else {
-    // bd: client-side filtering (existing behavior)
-    setSearch(value)
-    await fetchIssues(!!term)
-  }
+// Search handler — client-side substring match over id, labels and title.
+// The list is always fetched with --all, so `issues` already holds every issue:
+// filtering is a pure computed over that list and needs no CLI round-trip.
+// Delegating to the CLI here would be overwritten by the next poll cycle,
+// which replaces `issues` with the full list.
+//
+// The input is bound straight to `filters.search` so there is a single source of
+// truth: resets that go through the filter state (Clear chip, KPI cards) also
+// empty the box, instead of leaving stale text over an unfiltered list.
+const searchValue = computed({
+  get: () => filters.value.search,
+  set: (value: string) => setSearch(value),
 })
+const isSearchActive = computed(() => !!filters.value.search?.trim())
 
 // Available labels computed from all issues
 const availableLabels = computed(() => {
