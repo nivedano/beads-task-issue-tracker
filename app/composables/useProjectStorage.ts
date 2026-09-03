@@ -70,6 +70,33 @@ function getFullKey(setting: string, projectHash: string): string {
 }
 
 /**
+ * Move every `beads:proj:{hash(oldPath)}:*` key over to `hash(newPath)`.
+ *
+ * Per-project settings are namespaced by a hash of the project path, so any
+ * change in how that path is *spelled* — such as dropping the Windows `\\?\`
+ * verbatim prefix that used to leak out of the Rust backend — would otherwise
+ * orphan the user's filters, columns and pinned state for that project.
+ */
+export function migrateProjectStorageNamespace(oldPath: string, newPath: string): void {
+  if (!import.meta.client || oldPath === newPath) return
+
+  const oldPrefix = getFullKey('', hashPath(oldPath))
+  const newPrefix = getFullKey('', hashPath(newPath))
+  if (oldPrefix === newPrefix) return
+
+  for (const key of Object.keys(localStorage)) {
+    if (!key.startsWith(oldPrefix)) continue
+    const value = localStorage.getItem(key)
+    const target = `${newPrefix}${key.slice(oldPrefix.length)}`
+    // Never clobber a setting already saved under the new namespace.
+    if (value !== null && localStorage.getItem(target) === null) {
+      localStorage.setItem(target, value)
+    }
+    localStorage.removeItem(key)
+  }
+}
+
+/**
  * Load a value from localStorage for the current project.
  */
 function loadValue<T>(setting: string, defaultValue: T): T {

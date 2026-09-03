@@ -49,7 +49,7 @@
 #### Storage & Projects
 | File | Exports | Purpose |
 |------|---------|---------|
-| `useProjectStorage.ts` | `useProjectStorage()`, `saveProjectValue()` | Per-project localStorage via path hash (`beads:proj:{hash}:{key}`) |
+| `useProjectStorage.ts` | `useProjectStorage()`, `saveProjectValue()`, `migrateProjectStorageNamespace()` | Per-project localStorage via path hash (`beads:proj:{hash}:{key}`) |
 | `useLocalStorage.ts` | `useLocalStorage()` | Global localStorage with singleton cache |
 | `useBeadsPath.ts` | `useBeadsPath()` | Project path management — validates, triggers storage reload on change |
 | `useFavorites.ts` | `useProjects()` | Projects — add/remove/rename/reorder, sort modes (renamed from favorites) |
@@ -87,6 +87,7 @@
 | File | Exports | Purpose |
 |------|---------|---------|
 | `useSidebarResize.ts` | `useSidebarResize()` | Sidebar open/close state (persisted) + drag resize handlers |
+| `useDialogResize.ts` | `useDialogResize({ storageKey, defaultWidth, defaultHeight })` | Per-dialog drag resize (E/S/SE handles) with persisted size; doubles pointer deltas for centre-translated modals |
 | `useIssueDialogs.ts` | `useIssueDialogs()` | All dialog state + ~20 handlers (delete, close, detach, deps, relations). Singleton pattern. Delete notifications |
 
 #### Dialogs & Previews
@@ -123,7 +124,7 @@
 | Component | Purpose |
 |-----------|---------|
 | `PathSelector.vue` | Project picker — filesystem tree navigation, probe expose toggle (dev-only) |
-| `FolderPicker.vue` | Breadcrumb folder navigation with Beads/Dolt badges (sub-component of PathSelector) |
+| `FolderPicker.vue` | Folder navigation with Beads/Dolt badges: quick-access sidebar (`fs_roots` drives + known folders + existing projects), clickable breadcrumb that toggles to a text path field, and a native OS "Browse…" dialog (sub-component of PathSelector) |
 | `KpiCard.vue` | Stats card (total, open, in-progress, blocked, closed, ready) |
 | `StatusChart.vue` | Status pie chart |
 | `PriorityChart.vue` | Priority pie chart |
@@ -177,7 +178,7 @@
 | `favorites-helpers.ts` | `normalizePath()`, `deduplicateFavorites()`, `sortFavorites()`, `isFavorite()`, `createFavoriteEntry()` | Pure functions extracted from useFavorites for testability |
 | `markdown.ts` | `renderMarkdown()`, `extractImagesFromMarkdown()`, `extractImagesFromExternalRef()`, `extractMarkdownFromExternalRef()`, `extractNonImageRefs()` | Markdown rendering + image/ref extraction. Filters `cleared:` prefixes |
 | `open-url.ts` | `openUrl()`, `openImageFile()`, `readImageFile()`, `readTextFile()`, `writeTextFile()` | URL/file opening + image loading as base64 |
-| `path.ts` | `splitPath()`, `getPathSeparator()`, `getFolderName()`, `getParentPath()` | Cross-platform path utilities |
+| `path.ts` | `splitPath()`, `getPathSeparator()`, `getFolderName()`, `getParentPath()`, `splitRoot()`, `isRootPath()`, `getPathCrumbs()` | Cross-platform path utilities (Windows drive roots anchored, breadcrumb segments) |
 | `hash.ts` | `hashPath()` | DJB2 hash for per-project storage namespacing |
 | `lib/utils.ts` | `cn()` | TailwindCSS class merging (clsx + twMerge) |
 
@@ -298,7 +299,8 @@ interface DashboardStats { total, open, inProgress, blocked, closed, ready, byTy
 | Command | Purpose |
 |---------|---------|
 | `fs_exists` | File existence check |
-| `fs_list` | Directory listing with `.beads` and Dolt backend detection (`usesDolt`) |
+| `fs_list` | Directory listing with `.beads` and Dolt backend detection (`usesDolt`); strips the Windows `\\?\` verbatim prefix |
+| `fs_roots` | Quick-access roots for the folder picker: Home/Desktop/Documents + mounted drives on Windows |
 
 #### Attachments (all path-validated to `.beads/attachments/`)
 | Command | Purpose |
@@ -434,8 +436,8 @@ Git Sync (built-in backend):
 |------|-------|--------|
 | `tests/utils/issue-helpers.test.ts` | 56 | `deduplicateIssues`, `naturalCompare`, `getParentIdFromIssue`, `compareChildIssues`, sort orders, `sortIssues`, `filterIssues`, `groupIssues`, `computeReadyIssues` |
 | `tests/utils/markdown.test.ts` | 42 | `isImagePath`, `isMarkdownPath`, `isUrl`, `extractImagesFromMarkdown`, `extractImagesFromExternalRef`, `extractMarkdownFromExternalRef`, `extractNonImageRefs`, `renderMarkdown` |
-| `tests/utils/favorites-helpers.test.ts` | 22 | `normalizePath`, `deduplicateFavorites`, `sortFavorites`, `isFavorite`, `createFavoriteEntry` |
-| `tests/utils/path.test.ts` | 19 | `splitPath`, `getPathSeparator`, `getFolderName`, `getParentPath` |
+| `tests/utils/favorites-helpers.test.ts` | 28 | `normalizePath`, `deduplicateFavorites`, `sortFavorites`, `isFavorite`, `createFavoriteEntry` |
+| `tests/utils/path.test.ts` | 38 | `splitPath`, `getPathSeparator`, `getFolderName`, `getParentPath`, `splitRoot`, `isRootPath`, `getPathCrumbs` |
 | `tests/utils/open-url.test.ts` | 19 | `isValidUrl`, `isLocalPath`, `normalizeUrl` |
 | `tests/composables/useKeyboardNavigation.test.ts` | 17 | Arrow key navigation, scroll-to-focused |
 | `tests/utils/attachment-encoding.test.ts` | 14 | Attachment path encoding/decoding |
@@ -456,5 +458,6 @@ Git Sync (built-in backend):
 
 | File | Purpose |
 |------|---------|
-| `scripts/churn-stress.sh` | Generates sustained `.beads/` churn to exercise the watcher/poll pipeline |
+| `tools/churn-stress.sh` | Generates sustained `.beads/` churn to exercise the watcher/poll pipeline |
+| `tools/release.ps1` | Validates versions and prerequisites, runs quality gates, and builds local Tauri release executables or installer bundles |
 | `docs/churn-stress-runbook.md` | Runbook for the churn stress test and reading the diagnostics output |

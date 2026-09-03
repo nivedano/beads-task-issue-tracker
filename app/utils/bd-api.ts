@@ -12,7 +12,7 @@ declare global {
 }
 
 // Check if running in Tauri
-function isTauri(): boolean {
+export function isTauri(): boolean {
   return typeof window !== 'undefined' && (!!window.__TAURI__ || !!window.__TAURI_INTERNALS__)
 }
 
@@ -783,6 +783,18 @@ export async function fsList(path?: string): Promise<FsListResult> {
   return $fetch<FsListResult>('/api/fs/list', {
     params: path ? { path } : undefined,
   })
+}
+
+/**
+ * Quick-access roots for the folder picker: known user folders plus, on
+ * Windows, every mounted drive. Returns [] in web mode (no Tauri backend).
+ */
+export async function fsRoots(): Promise<DirectoryEntry[]> {
+  if (isTauri()) {
+    return invoke<DirectoryEntry[]>('fs_roots')
+  }
+
+  return []
 }
 
 export async function fsExists(path: string): Promise<boolean> {

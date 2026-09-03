@@ -33,12 +33,44 @@ describe('normalizePath', () => {
     expect(normalizePath('/home/dev/project')).toBe('/home/dev/project')
   })
 
-  it('handles root path', () => {
-    expect(normalizePath('/')).toBe('')
+  it('keeps the Unix root intact', () => {
+    // Stripping `/` to '' would make setPath store an empty beadsPath, and
+    // every bd call would silently run in the app's cwd.
+    expect(normalizePath('/')).toBe('/')
+    expect(normalizePath('///')).toBe('/')
   })
 
   it('handles empty string', () => {
     expect(normalizePath('')).toBe('')
+  })
+
+  it('strips the Windows verbatim prefix so pre-fix entries still match', () => {
+    expect(normalizePath('\\\\?\\C:\\dev\\my-app')).toBe('C:\\dev\\my-app')
+    expect(normalizePath('\\\\?\\C:\\dev\\my-app')).toBe(normalizePath('C:\\dev\\my-app'))
+  })
+
+  it('unwraps verbatim UNC paths', () => {
+    expect(normalizePath('\\\\?\\UNC\\srv\\share\\dir')).toBe('\\\\srv\\share\\dir')
+  })
+
+  it('strips trailing backslashes', () => {
+    expect(normalizePath('C:\\dev\\my-app\\')).toBe('C:\\dev\\my-app')
+  })
+
+  it('keeps a Windows drive root anchored', () => {
+    // A bare `C:` is drive-relative on Windows and must never be stored.
+    expect(normalizePath('C:\\')).toBe('C:\\')
+    expect(normalizePath('C:/')).toBe('C:\\')
+  })
+
+  it('leaves exotic device paths alone', () => {
+    expect(normalizePath('\\\\?\\Volume{abc}')).toBe('\\\\?\\Volume{abc}')
+  })
+
+  it('keeps a UNC share root intact', () => {
+    expect(normalizePath('\\\\srv\\share')).toBe('\\\\srv\\share')
+    expect(normalizePath('\\\\srv\\share\\')).toBe('\\\\srv\\share')
+    expect(normalizePath('\\\\srv\\share\\dir\\')).toBe('\\\\srv\\share\\dir')
   })
 })
 

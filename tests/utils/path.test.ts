@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { splitPath, getPathSeparator, getFolderName, getParentPath } from '~/utils/path'
+import { splitPath, getPathSeparator, getFolderName, getParentPath, isRootPath, getPathCrumbs, splitRoot } from '~/utils/path'
 
 // ---------------------------------------------------------------------------
 // splitPath
@@ -90,11 +90,124 @@ describe('getParentPath', () => {
     expect(getParentPath('/folder')).toBe('/')
   })
 
-  it('preserves Windows separator in result', () => {
-    expect(getParentPath('C:\\folder')).toBe('C:')
+  it('anchors the drive root instead of returning a drive-relative "C:"', () => {
+    expect(getParentPath('C:\\folder')).toBe('C:\\')
   })
 
   it('returns separator for single component', () => {
     expect(getParentPath('folder')).toBe('/')
+  })
+
+  it('is idempotent at the Windows drive root', () => {
+    expect(getParentPath('C:\\')).toBe('C:\\')
+    expect(getParentPath('C:')).toBe('C:\\')
+  })
+
+  it('is idempotent at the Unix root', () => {
+    expect(getParentPath('/')).toBe('/')
+  })
+
+  it('stops at a UNC share instead of walking into \\\\srv', () => {
+    // `\\srv` is not a directory — the share is as far up as you can go.
+    expect(getParentPath('\\\\srv\\share\\dir')).toBe('\\\\srv\\share')
+    expect(getParentPath('\\\\srv\\share')).toBe('\\\\srv\\share')
+  })
+
+  it('returns the parent within a UNC share', () => {
+    expect(getParentPath('\\\\srv\\share\\dir\\sub')).toBe('\\\\srv\\share\\dir')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// splitRoot
+// ---------------------------------------------------------------------------
+describe('splitRoot', () => {
+  it('splits a Windows drive path', () => {
+    expect(splitRoot('C:\\dev\\app')).toEqual({ root: 'C:\\', rest: 'dev\\app' })
+  })
+
+  it('anchors a bare drive letter', () => {
+    expect(splitRoot('C:')).toEqual({ root: 'C:\\', rest: '' })
+  })
+
+  it('treats a UNC share as the root', () => {
+    expect(splitRoot('\\\\srv\\share\\dir')).toEqual({ root: '\\\\srv\\share', rest: '\\dir' })
+  })
+
+  it('splits a Unix path', () => {
+    expect(splitRoot('/home/dev')).toEqual({ root: '/', rest: 'home/dev' })
+  })
+
+  it('reports no root for a relative path', () => {
+    expect(splitRoot('repos/app')).toEqual({ root: '', rest: 'repos/app' })
+  })
+})
+
+// ---------------------------------------------------------------------------
+// isRootPath
+// ---------------------------------------------------------------------------
+describe('isRootPath', () => {
+  it('recognises the Unix root', () => {
+    expect(isRootPath('/')).toBe(true)
+  })
+
+  it('recognises Windows drive roots in both forms', () => {
+    expect(isRootPath('C:\\')).toBe(true)
+    expect(isRootPath('d:/')).toBe(true)
+    expect(isRootPath('C:')).toBe(true)
+  })
+
+  it('recognises a UNC share as a root', () => {
+    expect(isRootPath('\\\\srv\\share')).toBe(true)
+    expect(isRootPath('\\\\srv\\share\\')).toBe(true)
+  })
+
+  it('rejects non-root paths', () => {
+    expect(isRootPath('C:\\dev')).toBe(false)
+    expect(isRootPath('/home')).toBe(false)
+    expect(isRootPath('\\\\srv\\share\\dir')).toBe(false)
+    expect(isRootPath('folder')).toBe(false)
+    expect(isRootPath('')).toBe(false)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// getPathCrumbs
+// ---------------------------------------------------------------------------
+describe('getPathCrumbs', () => {
+  it('builds crumbs for a Windows path with an anchored drive root', () => {
+    expect(getPathCrumbs('C:\\dev\\my-app')).toEqual([
+      { name: 'C:', path: 'C:\\' },
+      { name: 'dev', path: 'C:\\dev' },
+      { name: 'my-app', path: 'C:\\dev\\my-app' },
+    ])
+  })
+
+  it('builds crumbs for a Unix path', () => {
+    expect(getPathCrumbs('/home/dev/project')).toEqual([
+      { name: '/', path: '/' },
+      { name: 'home', path: '/home' },
+      { name: 'dev', path: '/home/dev' },
+      { name: 'project', path: '/home/dev/project' },
+    ])
+  })
+
+  it('returns a single crumb for a drive root', () => {
+    expect(getPathCrumbs('C:\\')).toEqual([{ name: 'C:', path: 'C:\\' }])
+  })
+
+  it('builds crumbs for a UNC path with the share as a single root crumb', () => {
+    expect(getPathCrumbs('\\\\srv\\share\\dir')).toEqual([
+      { name: '\\\\srv\\share', path: '\\\\srv\\share' },
+      { name: 'dir', path: '\\\\srv\\share\\dir' },
+    ])
+  })
+
+  it('builds a single crumb for a relative path', () => {
+    expect(getPathCrumbs('~')).toEqual([{ name: '~', path: '~' }])
+  })
+
+  it('returns an empty list for an empty path', () => {
+    expect(getPathCrumbs('')).toEqual([])
   })
 })

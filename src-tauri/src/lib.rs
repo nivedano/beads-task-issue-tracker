@@ -3137,19 +3137,121 @@ async fn bd_available_relation_types() -> Vec<serde_json::Value> {
     types.into_iter().map(|(v, l)| serde_json::json!({ "value": v, "label": l })).collect()
 }
 
+/// Strip the Windows verbatim (extended-length) prefix that `canonicalize()` adds.
+///
+/// `std::fs::canonicalize` returns paths like `\\?\C:\Users\me` on Windows. That
+/// prefix is meaningless to users, breaks path joining in the UI, and renders as
+/// garbage in the folder picker. Convert back to the familiar form:
+///   - `\\?\C:\Users\me` becomes `C:\Users\me`
+///   - `\\?\UNC\srv\share` becomes `\\srv\share`
+///
+/// No-op on any other path, so it is safe (and unit-testable) on Unix too.
+fn strip_verbatim_prefix(path: &str) -> String {
+    if let Some(rest) = path.strip_prefix(r"\\?\UNC\") {
+        return format!(r"\\{}", rest);
+    }
+    if let Some(rest) = path.strip_prefix(r"\\?\") {
+        // Only unwrap real drive paths (`C:\...`); leave exotic device paths alone.
+        let bytes = rest.as_bytes();
+        if bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':' {
+            return rest.to_string();
+        }
+    }
+    path.to_string()
+}
+
+/// Normalize user-typed input before resolving it.
+///
+/// On Windows a bare drive letter (`D:`) is *drive-relative*: `canonicalize()`
+/// resolves it against the process' current directory on that drive rather than
+/// the drive root. Anchor it explicitly. Also trims surrounding whitespace and
+/// quotes, which Explorer's "Copy as path" adds.
+fn normalize_input_path(path: &str) -> String {
+    let trimmed = path.trim().trim_matches('"');
+    let bytes = trimmed.as_bytes();
+    if bytes.len() == 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':' {
+        return format!(r"{}\", trimmed);
+    }
+    trimmed.to_string()
+}
+
+/// Expand a leading `~` to the user's home directory (`~`, `~/foo`, `~\foo`).
+fn expand_home(path: &str) -> PathBuf {
+    let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
+    if path == "~" {
+        return home;
+    }
+    if let Some(rest) = path.strip_prefix("~/").or_else(|| path.strip_prefix(r"~\")) {
+        return home.join(rest);
+    }
+    PathBuf::from(path)
+}
+
 #[tauri::command]
 async fn fs_exists(path: String) -> Result<bool, String> {
     Ok(std::path::Path::new(&path).exists())
 }
 
 #[tauri::command]
+async fn fs_roots() -> Vec<DirectoryEntry> {
+    quick_access_roots()
+}
+
+/// Quick-access roots for the folder picker sidebar: known user folders plus,
+/// on Windows, every mounted drive. Without this there is no way to reach a
+/// second drive except by typing its letter.
+fn quick_access_roots() -> Vec<DirectoryEntry> {
+    let mut roots: Vec<(String, PathBuf)> = Vec::new();
+
+    if let Some(home) = dirs::home_dir() {
+        roots.push(("Home".to_string(), home));
+    }
+    if let Some(desktop) = dirs::desktop_dir() {
+        roots.push(("Desktop".to_string(), desktop));
+    }
+    if let Some(documents) = dirs::document_dir() {
+        roots.push(("Documents".to_string(), documents));
+    }
+
+    #[cfg(windows)]
+    for letter in b'A'..=b'Z' {
+        let drive = format!("{}:\\", letter as char);
+        if std::path::Path::new(&drive).is_dir() {
+            roots.push((drive.clone(), PathBuf::from(&drive)));
+        }
+    }
+
+    #[cfg(not(windows))]
+    roots.push(("/".to_string(), PathBuf::from("/")));
+
+    roots
+        .into_iter()
+        .filter(|(_, path)| path.is_dir())
+        .map(|(name, path)| {
+            let beads_path = path.join(".beads");
+            let has_beads = beads_path.is_dir();
+            DirectoryEntry {
+                name,
+                path: strip_verbatim_prefix(&path.to_string_lossy()),
+                is_directory: true,
+                has_beads,
+                uses_dolt: has_beads && project_uses_dolt(&beads_path),
+            }
+        })
+        .collect()
+}
+
+#[tauri::command]
 async fn fs_list(path: Option<String>) -> Result<FsListResult, String> {
+    list_directory(path)
+}
+
+fn list_directory(path: Option<String>) -> Result<FsListResult, String> {
     use std::fs;
 
     let target_path = match path {
-        Some(p) if p == "~" => dirs::home_dir().unwrap_or_else(|| PathBuf::from("/")),
-        Some(p) => PathBuf::from(p),
-        None => dirs::home_dir().unwrap_or_else(|| PathBuf::from("/")),
+        Some(p) if !p.trim().is_empty() => expand_home(&normalize_input_path(&p)),
+        _ => dirs::home_dir().unwrap_or_else(|| PathBuf::from("/")),
     };
 
     let target_path = target_path.canonicalize()
@@ -3186,7 +3288,7 @@ async fn fs_list(path: Option<String>) -> Result<FsListResult, String> {
 
             directories.push(DirectoryEntry {
                 name,
-                path: full_path.to_string_lossy().to_string(),
+                path: strip_verbatim_prefix(&full_path.to_string_lossy()),
                 is_directory: true,
                 has_beads,
                 uses_dolt,
@@ -3208,7 +3310,7 @@ async fn fs_list(path: Option<String>) -> Result<FsListResult, String> {
     let current_uses_dolt = current_has_beads && project_uses_dolt(&current_beads_path);
 
     Ok(FsListResult {
-        current_path: target_path.to_string_lossy().to_string(),
+        current_path: strip_verbatim_prefix(&target_path.to_string_lossy()),
         has_beads: current_has_beads,
         uses_dolt: current_uses_dolt,
         entries: directories,
@@ -5088,6 +5190,7 @@ pub fn run() {
             bd_available_relation_types,
             fs_exists,
             fs_list,
+            fs_roots,
             check_for_updates,
             check_for_updates_demo,
             check_bd_cli_update,
@@ -5125,6 +5228,118 @@ mod tests {
             r#"{{"id":"{}","title":"{}","description":null,"status":"open","priority":3,"issue_type":"task","owner":null,"assignee":null,"labels":[],"created_at":"2025-01-01T00:00:00Z","created_by":null,"updated_at":"2025-01-01T00:00:00Z","closed_at":null,"close_reason":null,"blocked_by":null,"blocks":null,"comments":null,"external_ref":null,"estimate":null,"design":null,"acceptance_criteria":null,"notes":null,"parent":null,"dependents":null,"dependencies":null,"dependency_count":null,"dependent_count":null,"metadata":null,"spec_id":null,"comment_count":null}}"#,
             id, title
         )
+    }
+
+    #[test]
+    fn strip_verbatim_prefix_unwraps_drive_paths() {
+        assert_eq!(strip_verbatim_prefix(r"\\?\C:\Users\me"), r"C:\Users\me");
+        assert_eq!(strip_verbatim_prefix(r"\\?\d:\repos"), r"d:\repos");
+    }
+
+    #[test]
+    fn strip_verbatim_prefix_unwraps_unc_paths() {
+        assert_eq!(strip_verbatim_prefix(r"\\?\UNC\srv\share\dir"), r"\\srv\share\dir");
+    }
+
+    #[test]
+    fn strip_verbatim_prefix_leaves_other_paths_alone() {
+        assert_eq!(strip_verbatim_prefix("/home/dev/project"), "/home/dev/project");
+        assert_eq!(strip_verbatim_prefix(r"C:\already\plain"), r"C:\already\plain");
+        // Device paths are not drive paths - leave them untouched.
+        assert_eq!(strip_verbatim_prefix(r"\\?\Volume{abc}\x"), r"\\?\Volume{abc}\x");
+    }
+
+    /// End-to-end guard for the actual bug: `canonicalize()` is what introduced
+    /// the `\\?\` prefix that leaked into the folder picker.
+    #[test]
+    fn canonicalized_home_has_no_verbatim_prefix() {
+        let home = dirs::home_dir().expect("home dir");
+        let canonical = home.canonicalize().expect("canonicalize home");
+        let displayed = strip_verbatim_prefix(&canonical.to_string_lossy());
+        assert!(
+            !displayed.starts_with(r"\\?\"),
+            "verbatim prefix leaked into displayed path: {displayed}"
+        );
+    }
+
+    /// Exercises the whole `fs_list` path on the real filesystem: neither the
+    /// current path nor any child entry may carry the verbatim prefix, because
+    /// the children are what the picker navigates into.
+    #[test]
+    fn list_directory_returns_plain_paths() {
+        let result = list_directory(Some("~".to_string())).expect("list home");
+        assert!(
+            !result.current_path.starts_with(r"\\?\"),
+            "current_path carries verbatim prefix: {}",
+            result.current_path
+        );
+        for entry in &result.entries {
+            assert!(
+                !entry.path.starts_with(r"\\?\"),
+                "entry carries verbatim prefix: {}",
+                entry.path
+            );
+        }
+    }
+
+    /// A bare drive letter must resolve to the drive root, not to the process'
+    /// current directory on that drive.
+    #[test]
+    #[cfg(windows)]
+    fn list_directory_resolves_bare_drive_letter_to_root() {
+        let result = list_directory(Some("C:".to_string())).expect("list C:");
+        assert_eq!(result.current_path, r"C:\");
+    }
+
+    #[test]
+    fn quick_access_roots_are_navigable() {
+        let roots = quick_access_roots();
+        assert!(!roots.is_empty(), "expected at least one quick-access root");
+        for root in &roots {
+            assert!(
+                !root.path.starts_with(r"\\?\"),
+                "root carries verbatim prefix: {}",
+                root.path
+            );
+            // Every sidebar entry must be something fs_list can open.
+            list_directory(Some(root.path.clone()))
+                .unwrap_or_else(|e| panic!("root {} is not listable: {e}", root.path));
+        }
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn quick_access_roots_include_the_system_drive() {
+        let roots = quick_access_roots();
+        assert!(
+            roots.iter().any(|r| r.path == r"C:\"),
+            "expected C:\\ among quick-access roots, got {:?}",
+            roots.iter().map(|r| &r.path).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn normalize_input_path_anchors_bare_drive_letters() {
+        // `D:` is drive-relative on Windows and must become the drive root.
+        assert_eq!(normalize_input_path("D:"), r"D:\");
+        assert_eq!(normalize_input_path(" c: "), r"c:\");
+        assert_eq!(normalize_input_path(r"D:\repos"), r"D:\repos");
+    }
+
+    #[test]
+    fn normalize_input_path_strips_explorer_quotes() {
+        assert_eq!(normalize_input_path("\"C:\\Program Files\""), r"C:\Program Files");
+        assert_eq!(normalize_input_path("  /home/dev  "), "/home/dev");
+    }
+
+    #[test]
+    fn expand_home_handles_tilde_forms() {
+        let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
+        assert_eq!(expand_home("~"), home);
+        assert_eq!(expand_home("~/repos"), home.join("repos"));
+        assert_eq!(expand_home(r"~\repos"), home.join("repos"));
+        // Not a tilde path - passed through verbatim.
+        assert_eq!(expand_home("/tmp/x"), PathBuf::from("/tmp/x"));
     }
 
     #[test]

@@ -2,7 +2,7 @@
  * Pure helper functions for project management.
  * Extracted from useProjects composable for testability.
  */
-import { getFolderName } from '~/utils/path'
+import { getFolderName, isRootPath, splitRoot } from '~/utils/path'
 
 export interface Project {
   path: string
@@ -19,10 +19,24 @@ export type ProjectSortMode = 'alpha' | 'alpha-desc' | 'manual'
 export type FavoritesSortMode = ProjectSortMode
 
 /**
- * Normalize path by stripping trailing slashes for consistent comparison.
+ * Normalize a path for storage and comparison.
+ *
+ * Windows verbatim paths (`\\?\C:\dev\app`) used to leak out of the Rust
+ * backend's `canonicalize()` and got persisted that way, so strip the prefix
+ * here: a project added before the fix must still match the plain `C:\dev\app`
+ * the folder picker now reports.
+ *
+ * A trailing separator is not significant — except at a root, which must never
+ * be stripped away: `/` would become `''` (making every bd call run in the
+ * app's cwd) and `C:\` would become the drive-*relative* `C:`.
  */
 export function normalizePath(p: string): string {
-  return p.replace(/\/+$/, '')
+  const plain = p
+    .replace(/^\\\\\?\\UNC\\/, '\\\\')
+    .replace(/^\\\\\?\\(?=[a-zA-Z]:)/, '')
+
+  if (isRootPath(plain)) return splitRoot(plain).root
+  return plain.replace(/[/\\]+$/, '')
 }
 
 /**

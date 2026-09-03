@@ -1,6 +1,8 @@
 import { fsExists } from '~/utils/bd-api'
 import { getFolderName } from '~/utils/path'
 import { useNotification } from '~/composables/useNotification'
+import { migrateProjectStorageNamespace } from '~/composables/useProjectStorage'
+import { normalizePath } from '~/utils/favorites-helpers'
 import type { Project, ProjectSortMode } from '~/utils/favorites-helpers'
 
 // Retry once after 500ms to handle transient startup failures (Tauri backend not ready)
@@ -13,11 +15,6 @@ async function fsExistsWithRetry(path: string): Promise<boolean> {
 
 // Re-export for backward compatibility
 export type { Project as Favorite, Project, ProjectSortMode as FavoritesSortMode, ProjectSortMode }
-
-// Normalize path by stripping trailing slashes for consistent comparison
-function normalizePath(p: string): string {
-  return p.replace(/\/+$/, '')
-}
 
 // Shared state across all components
 const projects = ref<Project[]>([])
@@ -42,7 +39,18 @@ function initFromStorage() {
     const stored = localStorage.getItem('beads:favorites')
     if (stored) {
       try {
-        const parsed = JSON.parse(stored) as Project[]
+        // Normalize on read so entries persisted before the Windows verbatim-path
+        // fix (`\\?\C:\dev\app`) are migrated to the plain form in place, and
+        // carry each project's namespaced settings over to the new path hash.
+        let migrated = false
+        const parsed = (JSON.parse(stored) as Project[]).map((proj) => {
+          const path = normalizePath(proj.path)
+          if (path !== proj.path) {
+            migrateProjectStorageNamespace(proj.path, path)
+            migrated = true
+          }
+          return { ...proj, path }
+        })
         // Deduplicate by normalized path (keep first occurrence)
         const seen = new Set<string>()
         const deduped = parsed.filter((proj) => {
@@ -52,6 +60,9 @@ function initFromStorage() {
           return true
         })
         projects.value = deduped
+        if (migrated || deduped.length !== parsed.length) {
+          localStorage.setItem('beads:favorites', JSON.stringify(deduped))
+        }
 
         // Validate project paths exist asynchronously
         if (parsed.length > 0 && !isValidating) {
