@@ -5,47 +5,43 @@ const showSettingsDialog = ref(false)
 const showDebugPanel = ref(false)
 let menuInitialized = false
 
+// macOS keeps the native application menu. Windows/Linux render the same
+// commands in the in-app title bar (AppMenuBar) instead of a native menu row.
+const { isMacOS } = usePlatform()
+const usesInAppMenuBar = !isMacOS
+
 export function useAppMenu() {
-  const initializeMenu = async () => {
-    // Only initialize once and only in Tauri environment
-    if (menuInitialized) return
-    if (typeof window === 'undefined' || (!window.__TAURI__ && !window.__TAURI_INTERNALS__)) return
+  const openAbout = () => { showAboutDialog.value = true }
+  const openSettings = () => { showSettingsDialog.value = true }
+  const openUpdate = () => { showUpdateDialog.value = true }
+  const toggleLogs = () => { showDebugPanel.value = !showDebugPanel.value }
 
-    menuInitialized = true
-
+  const initializeNativeMenu = async () => {
     try {
       const { Menu, Submenu, MenuItem, PredefinedMenuItem } = await import('@tauri-apps/api/menu')
 
       // App menu items
       const aboutItem = await MenuItem.new({
         text: 'About Beads Task-Issue Tracker',
-        action: () => {
-          showAboutDialog.value = true
-        },
+        action: openAbout,
       })
       const separator1 = await PredefinedMenuItem.new({ item: 'Separator' })
 
       const settingsItem = await MenuItem.new({
         text: 'Settings...',
         accelerator: 'CmdOrCtrl+,',
-        action: () => {
-          showSettingsDialog.value = true
-        },
+        action: openSettings,
       })
 
       const checkUpdateItem = await MenuItem.new({
         text: 'Check for Update...',
-        action: () => {
-          showUpdateDialog.value = true
-        },
+        action: openUpdate,
       })
 
       const showLogsItem = await MenuItem.new({
         text: 'Show Logs...',
         accelerator: 'CmdOrCtrl+Shift+L',
-        action: () => {
-          showDebugPanel.value = !showDebugPanel.value
-        },
+        action: toggleLogs,
       })
 
       const separator2 = await PredefinedMenuItem.new({ item: 'Separator' })
@@ -125,11 +121,50 @@ export function useAppMenu() {
     }
   }
 
+  // Without a native menu there are no menu accelerators, so the two shortcuts
+  // the File menu advertises have to be handled by the webview.
+  const registerAccelerators = () => {
+    window.addEventListener('keydown', (event) => {
+      if (!(event.ctrlKey || event.metaKey) || event.altKey) return
+
+      if (!event.shiftKey && event.key === ',') {
+        event.preventDefault()
+        openSettings()
+        return
+      }
+
+      if (event.shiftKey && event.key.toLowerCase() === 'l') {
+        event.preventDefault()
+        toggleLogs()
+      }
+    })
+  }
+
+  const initializeMenu = async () => {
+    // Only initialize once and only in Tauri environment
+    if (menuInitialized) return
+    if (typeof window === 'undefined' || (!window.__TAURI__ && !window.__TAURI_INTERNALS__)) return
+
+    menuInitialized = true
+
+    if (usesInAppMenuBar) {
+      registerAccelerators()
+      return
+    }
+
+    await initializeNativeMenu()
+  }
+
   return {
     showUpdateDialog,
     showAboutDialog,
     showSettingsDialog,
     showDebugPanel,
+    usesInAppMenuBar,
+    openAbout,
+    openSettings,
+    openUpdate,
+    toggleLogs,
     initializeMenu,
   }
 }

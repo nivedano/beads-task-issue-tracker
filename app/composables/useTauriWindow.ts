@@ -31,8 +31,45 @@ export function useTauriWindow() {
     }
   }
 
+  // Window controls for the in-app title bar (undecorated windows).
+  const minimizeWindow = () => {
+    windowModule?.getCurrentWindow().minimize().catch(() => {})
+  }
+
+  const toggleMaximizeWindow = () => {
+    windowModule?.getCurrentWindow().toggleMaximize().catch(() => {})
+  }
+
+  const closeWindow = () => {
+    windowModule?.getCurrentWindow().close().catch(() => {})
+  }
+
+  const isWindowMaximized = async (): Promise<boolean> => {
+    if (!windowModule) return false
+    try {
+      return await windowModule.getCurrentWindow().isMaximized()
+    } catch {
+      return false
+    }
+  }
+
+  /** Subscribe to resize events; resolves to an unlisten function. */
+  const onWindowResized = async (handler: () => void): Promise<() => void> => {
+    if (!windowModule) return () => {}
+    try {
+      return await windowModule.getCurrentWindow().onResized(handler)
+    } catch {
+      return () => {}
+    }
+  }
+
   return {
     startDragging,
     setWindowTitle,
+    minimizeWindow,
+    toggleMaximizeWindow,
+    closeWindow,
+    isWindowMaximized,
+    onWindowResized,
   }
 }

@@ -5134,6 +5134,13 @@ pub fn run() {
             {
                 builder = builder.title_bar_style(tauri::TitleBarStyle::Overlay);
             }
+            // Windows: no native title bar and no native menu row — AppHeader renders
+            // the title bar, the File/Edit/Window menus and the window controls.
+            // Linux keeps its native decorations (window manager behaviour varies).
+            #[cfg(target_os = "windows")]
+            {
+                builder = builder.decorations(false).shadow(true);
+            }
             builder.build()?;
 
             // Log startup info

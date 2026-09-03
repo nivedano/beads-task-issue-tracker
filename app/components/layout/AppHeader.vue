@@ -5,6 +5,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '~/components/ui/tooltip'
+import { isTauri } from '~/utils/bd-api'
 
 const props = defineProps<{
   projectName?: string
@@ -24,11 +25,20 @@ const displayTitle = computed(() => props.projectName || 'Beads Task-Issue Track
 const { isDark, currentTheme, cycleTheme } = useTheme()
 const { zoomLevel, zoomIn, zoomOut, resetZoom, canZoomIn, canZoomOut } = useZoom()
 const { startDragging } = useTauriWindow()
+const { isMacOS, isWindows } = usePlatform()
+const { usesInAppMenuBar } = useAppMenu()
+
+// Window controls only make sense for the undecorated Tauri window, not in a browser tab.
+const showWindowControls = isWindows && isTauri()
 
 // Handle window dragging via Tauri API
 const handleMouseDown = (event: MouseEvent) => {
   // Only handle left click
   if (event.button !== 0) return
+
+  // Windows runs undecorated: leave dragging to data-tauri-drag-region so the
+  // native double-click-to-maximize gesture keeps working.
+  if (isWindows) return
 
   // Don't start dragging if click is inside a no-drag zone (buttons, inputs, etc.)
   const target = event.target as HTMLElement
@@ -55,12 +65,19 @@ const handleZoomIn = (event: MouseEvent) => {
 </script>
 
 <template>
-  <!-- macOS: pl-20 leaves space for traffic lights, mousedown triggers Tauri window dragging -->
+  <!-- macOS: pl-20 leaves space for traffic lights, mousedown triggers Tauri window dragging.
+       Windows/Linux: this row IS the title bar — it carries the menu bar and window controls. -->
   <header
-    class="flex items-center justify-center pl-20 pr-4 py-3 border-b border-border bg-card relative app-drag-region"
+    class="flex items-center justify-center border-b border-border bg-card relative app-drag-region"
+    :class="isMacOS ? 'pl-20 pr-4 py-3' : 'pl-2 pr-0 py-2'"
     data-tauri-drag-region
     @mousedown="handleMouseDown"
   >
+    <!-- In-app menu bar (left, absolute positioned) — replaces the native menu row -->
+    <div v-if="usesInAppMenuBar" class="absolute left-2 flex items-center">
+      <LayoutAppMenuBar />
+    </div>
+
     <!-- Centered title with icon - pointer-events-none to allow drag through -->
     <div v-if="!editContext" class="flex items-center gap-3 pointer-events-none">
       <svg
@@ -77,7 +94,7 @@ const handleZoomIn = (event: MouseEvent) => {
         <circle cx="20" cy="5" r="3" fill="#eab308" />
         <circle cx="12" cy="18" r="3" fill="#ef4444" />
       </svg>
-      <h1 class="text-lg font-semibold text-foreground leading-tight flex items-center gap-2">
+      <h1 class="text-lg font-semibold text-foreground leading-tight flex items-center gap-2 truncate max-w-[45vw]">
         {{ displayTitle }}
         <svg
           v-if="isExposed"
@@ -105,7 +122,7 @@ const handleZoomIn = (event: MouseEvent) => {
     </div>
 
     <!-- Zoom and Theme controls (right, absolute positioned) - no-drag to keep buttons clickable -->
-    <div class="absolute right-4 flex items-center gap-1 app-no-drag">
+    <div class="absolute flex items-center gap-1 app-no-drag" :class="showWindowControls ? 'right-36' : 'right-4'">
       <!-- Zoom controls -->
       <Tooltip>
         <TooltipTrigger as-child>
@@ -253,6 +270,11 @@ const handleZoomIn = (event: MouseEvent) => {
         </TooltipTrigger>
         <TooltipContent>{{ currentTheme.label }}</TooltipContent>
       </Tooltip>
+    </div>
+
+    <!-- Window controls (far right) — the window runs undecorated on Windows -->
+    <div v-if="showWindowControls" class="absolute right-0 top-0 bottom-0 flex items-stretch app-no-drag">
+      <LayoutWindowControls />
     </div>
   </header>
 </template>

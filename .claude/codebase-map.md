@@ -70,8 +70,9 @@
 | `useTheme.ts` | `useTheme()` | Dark/light mode toggle |
 | `useCollapsible.ts` | `useCollapsible()` | Panel collapse state (dashboard, project sections) |
 | `useZoom.ts` | `useZoom()` | Content zoom 75-150% |
-| `useAppMenu.ts` | `useAppMenu()` | Tauri native menu bar setup |
-| `useTauriWindow.ts` | `useTauriWindow()` | Window drag for custom title bar + dynamic window title (project name) |
+| `useAppMenu.ts` | `useAppMenu()` | Native menu (macOS) or in-app menu bar state + keyboard accelerators (Windows/Linux) |
+| `useTauriWindow.ts` | `useTauriWindow()` | Window drag for custom title bar, dynamic window title (project name), minimize/maximize/close controls |
+| `usePlatform.ts` | `usePlatform()` | Platform flags (`isMacOS`/`isWindows`/`isLinux`) driving window-chrome differences |
 | `usePinnedIssues.ts` | `usePinnedIssues()` | Pinned issue list with sort modes (`added`, `updated`, `manual`) |
 | `useKeyboardNavigation.ts` | `useKeyboardNavigation()` | Arrow key navigation for issue list with scroll-to-focused |
 
@@ -110,7 +111,9 @@
 #### Layout (`layout/`)
 | Component | Purpose |
 |-----------|---------|
-| `AppHeader.vue` | Top bar: title, zoom controls, theme toggle, Tauri drag region |
+| `AppHeader.vue` | Top bar: title, zoom controls, theme toggle, Tauri drag region; on Windows it is the title bar (menu bar + window controls) |
+| `AppMenuBar.vue` | In-app File/Edit/Window menu bar (Windows/Linux — replaces the native menu row) |
+| `WindowControls.vue` | Minimize/maximize/close buttons for the undecorated Windows window |
 | `UpdateIndicator.vue` | Sync/watcher status badges |
 | `UpdateDialog.vue` | Available updates UI |
 | `SettingsDialog.vue` | Theme, CLI client, backend selector, probe toggle (dev-only) |
@@ -180,6 +183,8 @@
 | `open-url.ts` | `openUrl()`, `openImageFile()`, `readImageFile()`, `readTextFile()`, `writeTextFile()` | URL/file opening + image loading as base64 |
 | `path.ts` | `splitPath()`, `getPathSeparator()`, `getFolderName()`, `getParentPath()`, `splitRoot()`, `isRootPath()`, `getPathCrumbs()` | Cross-platform path utilities (Windows drive roots anchored, breadcrumb segments) |
 | `hash.ts` | `hashPath()` | DJB2 hash for per-project storage namespacing |
+| `platform.ts` | `detectPlatform()` | User-agent → `macos`/`windows`/`linux` for window-chrome branching |
+| `edit-commands.ts` | `computePaste()`, `selectedText()` | Selection/caret maths behind the in-app Edit menu |
 | `lib/utils.ts` | `cn()` | TailwindCSS class merging (clsx + twMerge) |
 
 ### Types (`app/types/issue.ts`)
