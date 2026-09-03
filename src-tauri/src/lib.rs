@@ -4785,57 +4785,64 @@ fn start_watching(
                         return;
                     }
 
-                    let mut emit_now = false;
-                    let mut schedule_delayed_emit = false;
-                    let mut counters = None;
                     let min_interval = watcher_min_emit_interval();
 
-                    match project_emit_state.lock() {
-                        Ok(mut emit_state) => {
-                            if emit_state.session_id != watch_session_id {
-                                return;
-                            }
+                    let (emit_now, schedule_delayed_emit, emitted, suppressed) =
+                        match project_emit_state.lock() {
+                            Ok(mut emit_state) => {
+                                if emit_state.session_id != watch_session_id {
+                                    return;
+                                }
 
-                            let can_emit_now = emit_state
-                                .last_emit
-                                .map(|last| last.elapsed() >= min_interval)
-                                .unwrap_or(true);
+                                let can_emit_now = emit_state
+                                    .last_emit
+                                    .map(|last| last.elapsed() >= min_interval)
+                                    .unwrap_or(true);
 
-                            if can_emit_now {
-                                emit_state.pending = false;
-                                emit_state.last_emit = Some(Instant::now());
-                                emit_state.emitted_batches += 1;
-                                counters = Some((emit_state.emitted_batches, emit_state.suppressed_batches));
-                                emit_now = true;
-                            } else {
-                                emit_state.pending = true;
-                                emit_state.suppressed_batches += 1;
-                                counters = Some((emit_state.emitted_batches, emit_state.suppressed_batches));
-                                if !emit_state.flush_scheduled {
-                                    emit_state.flush_scheduled = true;
-                                    schedule_delayed_emit = true;
+                                if can_emit_now {
+                                    emit_state.pending = false;
+                                    emit_state.last_emit = Some(Instant::now());
+                                    emit_state.emitted_batches += 1;
+                                    (
+                                        true,
+                                        false,
+                                        emit_state.emitted_batches,
+                                        emit_state.suppressed_batches,
+                                    )
+                                } else {
+                                    emit_state.pending = true;
+                                    emit_state.suppressed_batches += 1;
+                                    let schedule_delayed_emit = if !emit_state.flush_scheduled {
+                                        emit_state.flush_scheduled = true;
+                                        true
+                                    } else {
+                                        false
+                                    };
+                                    (
+                                        false,
+                                        schedule_delayed_emit,
+                                        emit_state.emitted_batches,
+                                        emit_state.suppressed_batches,
+                                    )
                                 }
                             }
-                        }
-                        Err(err) => {
-                            log::error!("[watcher] Failed to lock emit state for {}: {}", project_path, err);
-                            return;
-                        }
-                    }
+                            Err(err) => {
+                                log::error!("[watcher] Failed to lock emit state for {}: {}", project_path, err);
+                                return;
+                            }
+                        };
 
                     if emit_now {
                         emit_beads_changed(&app_handle, &project_path);
-                        if let Some((emitted, suppressed)) = counters {
-                            log::info!(
-                                "[watcher] Emitted coalesced update for {} (events={}, relevant={}, emitted={}, suppressed={})",
-                                project_path,
-                                events.len(),
-                                relevant_count,
-                                emitted,
-                                suppressed
-                            );
-                        }
-                    } else if let Some((emitted, suppressed)) = counters {
+                        log::info!(
+                            "[watcher] Emitted coalesced update for {} (events={}, relevant={}, emitted={}, suppressed={})",
+                            project_path,
+                            events.len(),
+                            relevant_count,
+                            emitted,
+                            suppressed
+                        );
+                    } else {
                         log::info!(
                             "[watcher] Suppressed watcher batch for {} (events={}, relevant={}, emitted={}, suppressed={})",
                             project_path,

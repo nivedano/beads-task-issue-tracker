@@ -16,6 +16,16 @@ export default defineNuxtConfig({
 
   ssr: false,
 
+  nitro: {
+    storage: {
+      // Avoid Nuxt's file-URL prerender cache driver, which Rollup cannot
+      // resolve on Windows. Release generation only needs this cache in-process.
+      'internal:nuxt:prerender': {
+        driver: 'memory',
+      },
+    },
+  },
+
   router: {
     options: {
       hashMode: true,

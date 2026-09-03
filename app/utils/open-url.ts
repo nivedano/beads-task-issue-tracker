@@ -2,6 +2,7 @@
  * Utility to open URLs in the system browser
  * Uses Tauri shell.open() in desktop mode, window.open() in web mode
  */
+import { invoke } from '@tauri-apps/api/core'
 
 // Check if running in Tauri
 function isTauri(): boolean {
@@ -83,7 +84,6 @@ export async function openImageFile(filePath: string): Promise<void> {
   }
 
   try {
-    const { invoke } = await import('@tauri-apps/api/core')
     await invoke('open_image_file', { path: filePath })
   } catch (error) {
     console.error('Failed to open image file:', error)
@@ -101,7 +101,6 @@ export async function readTextFile(filePath: string): Promise<TextData | null> {
   }
 
   try {
-    const { invoke } = await import('@tauri-apps/api/core')
     const result = await invoke<{ content: string }>('read_text_file', { path: filePath })
     return { content: result.content }
   } catch (error) {
@@ -117,7 +116,6 @@ export async function writeTextFile(filePath: string, content: string): Promise<
   }
 
   try {
-    const { invoke } = await import('@tauri-apps/api/core')
     await invoke('write_text_file', { path: filePath, content })
     return true
   } catch (error) {
@@ -138,7 +136,6 @@ export async function readImageFile(filePath: string): Promise<ImageData | null>
   }
 
   try {
-    const { invoke } = await import('@tauri-apps/api/core')
     const result = await invoke<{ base64: string; mime_type: string }>('read_image_file', { path: filePath })
     return {
       base64: result.base64,

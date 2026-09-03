@@ -1,3 +1,4 @@
+import { invoke } from '@tauri-apps/api/core'
 import type { Issue, ChildIssue } from '~/types/issue'
 import { bdAvailableRelationTypes, checkBdCompatibility } from '~/utils/bd-api'
 
@@ -182,7 +183,6 @@ export function useIssueDialogs() {
     if (!selectedIssue.value) return
 
     const filePaths = Array.isArray(paths) ? paths : [paths]
-    const { invoke } = await import('@tauri-apps/api/core')
 
     for (const sourcePath of filePaths) {
       try {
@@ -215,7 +215,6 @@ export function useIssueDialogs() {
 
     isDetaching.value = true
     try {
-      const { invoke } = await import('@tauri-apps/api/core')
       await invoke('delete_attachment', {
         projectPath: beadsPath.value,
         issueId: selectedIssue.value.id,

@@ -13,9 +13,6 @@ async function fsExistsWithRetry(path: string): Promise<boolean> {
   return fsExists(path)
 }
 
-// Re-export for backward compatibility
-export type { Project as Favorite, Project, ProjectSortMode as FavoritesSortMode, ProjectSortMode }
-
 // Shared state across all components
 const projects = ref<Project[]>([])
 const sortMode = ref<ProjectSortMode>('alpha')

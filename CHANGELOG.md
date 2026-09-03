@@ -41,6 +41,7 @@ The version line moves to **2.x** so this fork can never collide with upstream o
 - **Tauri dev startup stability** across terminals
 
 ### Build tooling
+- Release builds no longer emit duplicate auto-import, mixed Tauri import, stale Browserslist data, Windows Nitro cache-driver, or Rust unused-assignment warnings
 - Added `tools/release.ps1` for local optimized executable builds, with quality checks and installer bundles available as explicit opt-ins
 - Renamed the maintenance utility directory from `scripts/` to `tools/`
 - **Migrated from pnpm to bun** as the package manager and script runner. `bun install` migrated
