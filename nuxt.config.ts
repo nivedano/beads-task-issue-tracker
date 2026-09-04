@@ -49,19 +49,14 @@ export default defineNuxtConfig({
 
   vite: {
     plugins: [tailwindcss()],
+    esbuild: {
+      pure: ['console.log', 'console.debug', 'console.info', 'console.warn'],
+      legalComments: 'none',
+    },
     build: {
       sourcemap: isDevMode,
       target: 'es2020',
-      minify: 'terser',
-      terserOptions: {
-        compress: {
-          drop_console: false,
-          pure_funcs: ['console.log', 'console.debug', 'console.info', 'console.warn'],
-        },
-        format: {
-          comments: false,
-        },
-      },
+      minify: 'esbuild',
     },
   },
 

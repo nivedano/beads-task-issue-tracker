@@ -31,7 +31,7 @@ defineEmits<{
     </div>
 
     <!-- Title -->
-    <h3 class="text-sm font-semibold line-clamp-2">{{ selectedIssue.title }}</h3>
+    <h3 class="text-sm font-semibold break-words">{{ selectedIssue.title }}</h3>
 
     <!-- Action buttons -->
     <div class="flex items-center justify-between pb-3">

@@ -150,7 +150,7 @@ try {
     if (-not $SkipChecks) {
         Invoke-NativeCommand -FilePath $bun -ArgumentList @('run', 'test') -Step 'Run frontend tests'
         Invoke-NativeCommand -FilePath $bun -ArgumentList @('x', 'vue-tsc', '--noEmit') -Step 'Run Vue TypeScript checks'
-        Invoke-NativeCommand -FilePath 'cargo' -ArgumentList @('test', '--manifest-path', 'src-tauri/Cargo.toml') -Step 'Run Rust tests'
+        Invoke-NativeCommand -FilePath 'cargo' -ArgumentList @('test', '--release', '--manifest-path', 'src-tauri/Cargo.toml') -Step 'Run Rust tests'
     }
 
     $buildScript = if ($ExecutableOnly) { 'tauri:build:exe' } else { 'tauri:build' }
