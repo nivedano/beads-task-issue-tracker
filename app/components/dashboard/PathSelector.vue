@@ -11,9 +11,10 @@ import ConfirmDialog from '~/components/ui/confirm-dialog/ConfirmDialog.vue'
 import FolderPicker from './FolderPicker.vue'
 import Sortable from 'sortablejs'
 import { getFolderName } from '~/utils/path'
-import { listProbeProjects, registerOrExposeProject, patchProbeProject, probeUnregisterProject, getExternalUrl } from '~/utils/bd-api'
+import { bdList, listProbeProjects, registerOrExposeProject, patchProbeProject, probeUnregisterProject, getExternalUrl } from '~/utils/bd-api'
 import type { ProbeProject } from '~/utils/probe-adapter'
 import { useKeyboardNavigation } from '~/composables/useKeyboardNavigation'
+import { deduplicateIssues } from '~/utils/issue-helpers'
 
 const props = defineProps<{
   isLoading?: boolean
@@ -21,6 +22,46 @@ const props = defineProps<{
 
 const { beadsPath, setPath, clearPath } = useBeadsPath()
 const { projects, sortedProjects, sortMode, hasReordered, removeProject, reorderProjects, setSortMode, resetSortOrder } = useProjects()
+const { issues } = useIssues()
+
+const projectIssueCounts = ref<Record<string, { active: number; total: number }>>({})
+const scannedProjectPaths = new Set<string>()
+
+async function scanProjectIssueCounts(path: string) {
+  scannedProjectPaths.add(path)
+  try {
+    const projectIssues = deduplicateIssues(await bdList({ path, includeAll: true }))
+    projectIssueCounts.value[path] = {
+      active: projectIssues.filter(issue => issue.status === 'open' || issue.status === 'in_progress').length,
+      total: projectIssues.length,
+    }
+  } catch {
+    scannedProjectPaths.delete(path)
+  }
+}
+
+watch(() => projects.value.map(project => project.path).sort().join('\0'), () => {
+  const paths = new Set(projects.value.map(project => project.path))
+  for (const path of Object.keys(projectIssueCounts.value)) {
+    if (!paths.has(path)) delete projectIssueCounts.value[path]
+  }
+  for (const path of scannedProjectPaths) {
+    if (!paths.has(path)) scannedProjectPaths.delete(path)
+  }
+  for (const project of projects.value) {
+    if (!scannedProjectPaths.has(project.path)) void scanProjectIssueCounts(project.path)
+  }
+}, { immediate: true })
+
+watch([issues, () => beadsPath.value, () => props.isLoading], () => {
+  const path = beadsPath.value
+  if (props.isLoading || !path) return
+  const projectIssues = deduplicateIssues(issues.value)
+  projectIssueCounts.value[path] = {
+    active: projectIssues.filter(issue => issue.status === 'open' || issue.status === 'in_progress').length,
+    total: projectIssues.length,
+  }
+})
 
 const rootRef = ref<HTMLElement | null>(null)
 const projectsListRef = ref<HTMLElement | null>(null)
@@ -527,6 +568,14 @@ watch(() => projects.value.length, () => {
               <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
             </svg>
             <span class="truncate flex-1 text-left">{{ proj.name }}</span>
+            <span
+              v-if="projectIssueCounts[proj.path]"
+              class="shrink-0 rounded-sm border border-[#e6e1d8] bg-[#f3f0e9] px-1 py-0.5 text-[10px] tabular-nums text-[#777168] dark:border-[#45423c] dark:bg-[#302e29] dark:text-[#c2bdb2]"
+              :aria-label="`${projectIssueCounts[proj.path].active} open or in progress out of ${projectIssueCounts[proj.path].total} tickets`"
+              :title="`${projectIssueCounts[proj.path].active} open or in progress / ${projectIssueCounts[proj.path].total} total tickets`"
+            >
+              {{ projectIssueCounts[proj.path].active }} / {{ projectIssueCounts[proj.path].total }}
+            </span>
             <kbd class="ml-2 shrink-0 text-right font-mono text-[10px] tabular-nums opacity-60 transition-opacity group-hover:opacity-0" aria-hidden="true">{{ projectIndex + 1 }}</kbd>
           </Button>
           <!-- Remove button - outside Button to avoid click capture -->
