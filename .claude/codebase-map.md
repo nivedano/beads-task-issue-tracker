@@ -69,7 +69,7 @@
 | `useNotification.ts` | `useNotification()` | Toast notifications — auto-dismiss after 5s, theme-aware light/dark styles |
 | `useTheme.ts` | `useTheme()` | Dark/light mode toggle |
 | `useCollapsible.ts` | `useCollapsible()` | Panel collapse state (dashboard, project sections) |
-| `useZoom.ts` | `useZoom()` | Content zoom 75-150% |
+| `useZoom.ts` | `useZoom()` | UI zoom 75-150%. Uses the webview's native `setZoom` (scales text and reflows like browser zoom); CSS `zoom` on `#zoomable-content` is only the fallback in browser dev mode |
 | `useAppMenu.ts` | `useAppMenu()` | Native menu (macOS) or in-app menu bar state + keyboard accelerators (Windows/Linux) |
 | `useTauriWindow.ts` | `useTauriWindow()` | Window drag for custom title bar, dynamic window title (project name), minimize/maximize/close controls |
 | `usePlatform.ts` | `usePlatform()` | Platform flags (`isMacOS`/`isWindows`/`isLinux`) driving window-chrome differences |
@@ -114,6 +114,7 @@
 | `AppHeader.vue` | Top bar: title, zoom controls, theme toggle, Tauri drag region; on Windows it is the title bar (menu bar + window controls) |
 | `AppMenuBar.vue` | In-app File/Edit/Window menu bar (Windows/Linux — replaces the native menu row) |
 | `WindowControls.vue` | Minimize/maximize/close buttons for the undecorated Windows window |
+| `HelpDialog.vue` | Keyboard shortcut reference (opened with F1 or the header help button) |
 | `UpdateIndicator.vue` | Sync/watcher status badges |
 | `UpdateDialog.vue` | Available updates UI |
 | `SettingsDialog.vue` | Theme, CLI client, backend selector, probe toggle (dev-only) |
@@ -185,7 +186,7 @@
 | `hash.ts` | `hashPath()` | DJB2 hash for per-project storage namespacing |
 | `platform.ts` | `detectPlatform()` | User-agent → `macos`/`windows`/`linux` for window-chrome branching |
 | `edit-commands.ts` | `computePaste()`, `selectedText()` | Selection/caret maths behind the in-app Edit menu |
-| `shortcuts.ts` | `matchesShortcut()`, `SHORTCUT_FIND/SETTINGS/LOGS` | Webview-handled accelerator matching (Ctrl+F, Ctrl+`,`, Ctrl+Shift+L) |
+| `shortcuts.ts` | `matchesShortcut()`, `SHORTCUT_FIND/SETTINGS/LOGS`, `SHORTCUT_HELP`, `SHORTCUT_NEW_ISSUE`, `SHORTCUT_DELETE_ISSUE`, `SHORTCUT_FOCUS_*`, `SHORTCUT_SELECT_PROJECT`, `SHORTCUT_TOGGLE_MAXIMIZE` | Webview-handled accelerator matching plus `SHORTCUT_HELP` (the shortcut list rendered by `HelpDialog`) |
 | `lib/utils.ts` | `cn()` | TailwindCSS class merging (clsx + twMerge) |
 
 ### Types (`app/types/issue.ts`)

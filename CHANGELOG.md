@@ -1,5 +1,54 @@
 # Changelog
 
+## [2.26.0] - 2026-11-08
+
+> Requires **bd 0.49.x**. Recommended CLI: **br** up to 0.1.33.
+
+### Features
+- **Native UI zoom**: the header zoom controls now drive the webview's real zoom
+  (`webview.setZoom`) instead of CSS `zoom` on `#zoomable-content`. Text scales and reflows the way
+  it does in a browser, so the UI actually becomes more readable rather than just larger. CSS zoom
+  remains as the fallback when the API is unavailable (browser dev mode)
+- **Windows in-app title bar**: Windows now runs undecorated — `AppHeader` is the title bar and
+  carries the File/Edit/Window menu plus minimize/maximize/close controls, instead of three stacked
+  native bars. macOS keeps its overlay title bar, Linux keeps native decorations. Known cost:
+  undecorated windows lose Win11 Snap Layouts on maximize hover
+- **Global keyboard shortcuts + help dialog**: `F1` opens the shortcut reference. `Ctrl/Cmd+F`
+  search, `Ctrl/Cmd+N` new issue, `Ctrl/Cmd+D` delete, `Ctrl/Cmd+,` settings, `Ctrl/Cmd+Shift+L`
+  logs, `Ctrl/Cmd+1`/`2` focus dashboard/details, `Ctrl+Q` focus the issue list, `Shift+O` project
+  picker, `Alt+Enter` toggle maximize
+- **Project issue counts**: every entry in the projects list shows its active/total ticket count,
+  scanned in the background
+- **Issue search matches labels** in addition to the issue id and title
+
+### Fixes
+- **Windows folder picker**: paths no longer display as `\\?\C:\Users\...\` with a trailing
+  backslash — the verbatim prefix is stripped from the current path and every child entry, and the
+  `dir="rtl"` hack that reordered the leading `\\?\` to the end is gone. A typed `D:` now resolves
+  to `D:\` rather than the process CWD on that drive, `~`, `~/foo` and `~\foo` all expand, and the
+  quotes added by Explorer's "Copy as path" are accepted. A new `fs_roots` command feeds the
+  quick-access sidebar (drives + known folders), Up is disabled at a root, and a failed path no
+  longer blanks the listing
+- **Path utilities**: `splitRoot()` is UNC-aware, so `\\server\share` is a root and Up stops there
+  instead of walking into the invalid `\\server`. `normalizePath()` no longer strips a root to an
+  empty string — `/` stayed `/` (an empty `beadsPath` made every `bd` call run in the app's cwd) and
+  `C:\` no longer degrades to the drive-relative `C:`
+- **Storage migration**: favorites and `beads:path` persisted with the old verbatim form are
+  normalized on load and written back; per-project keys move to the new path hash so filters,
+  columns and pinned state survive the change
+- **Issue detail header** wraps long titles instead of overflowing the panel
+- **Zoom no longer breaks favourites drag and drop**: the CSS counter-zoom workaround in
+  `PathSelector` is removed, since native zoom leaves SortableJS pointer coordinates untouched
+- **About dialog** copyright updated
+
+### Build tooling
+- Vite minification switched from terser to esbuild (terser dropped from `devDependencies`);
+  `console.log`/`debug`/`info`/`warn` stripped via esbuild's `pure` option and license comments
+  dropped via `legalComments: 'none'`
+- Rust release profile tuned for iteration speed: `incremental = true`, `lto = "off"` and
+  `opt-level = 1` for the app crate
+- `crate-type` reduced to `rlib` — the unused `staticlib` / `cdylib` targets were removed
+
 ## [2.25.0] - 2026-09-03
 
 > Requires **bd 0.49.x**. Recommended CLI: **br** up to 0.1.33.

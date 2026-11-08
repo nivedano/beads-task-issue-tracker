@@ -67,34 +67,12 @@ const rootRef = ref<HTMLElement | null>(null)
 const projectsListRef = ref<HTMLElement | null>(null)
 let sortableInstance: Sortable | null = null
 
-// Apply counter-zoom on projects list before SortableJS calculates coordinates
-const resetZoomOnPointerDown = (e: PointerEvent) => {
-  const target = e.target as HTMLElement
-  if (!target.closest('.drag-handle') || !projectsListRef.value) return
-  const zoomableContent = document.getElementById('zoomable-content')
-  const parentZoom = parseFloat(zoomableContent?.style.zoom || '100')
-  if (parentZoom !== 100) {
-    projectsListRef.value.style.zoom = `${10000 / parentZoom}%`
-  }
-}
-
-const restoreZoom = () => {
-  if (projectsListRef.value) {
-    projectsListRef.value.style.zoom = ''
-  }
-}
-
 const initSortable = () => {
   if (sortableInstance) {
     sortableInstance.destroy()
     sortableInstance = null
   }
   if (!projectsListRef.value) return
-
-  // Listen on pointerdown to reset zoom before SortableJS kicks in
-  projectsListRef.value.addEventListener('pointerdown', resetZoomOnPointerDown)
-  // Restore zoom if user releases without dragging
-  projectsListRef.value.addEventListener('pointerup', restoreZoom)
 
   sortableInstance = Sortable.create(projectsListRef.value, {
     handle: '.drag-handle',
@@ -105,7 +83,6 @@ const initSortable = () => {
     fallbackOnBody: true,
     disabled: !!props.isLoading,
     onEnd: (evt) => {
-      restoreZoom()
       if (evt.oldIndex == null || evt.newIndex == null || evt.oldIndex === evt.newIndex) return
       // Read new order from DOM data attributes before reverting
       const container = evt.from
@@ -156,8 +133,6 @@ const focusProjects = async (): Promise<boolean> => {
 
 onMounted(initSortable)
 onBeforeUnmount(() => {
-  projectsListRef.value?.removeEventListener('pointerdown', resetZoomOnPointerDown)
-  projectsListRef.value?.removeEventListener('pointerup', restoreZoom)
   sortableInstance?.destroy()
 })
 
@@ -571,10 +546,10 @@ watch(() => projects.value.length, () => {
             <span
               v-if="projectIssueCounts[proj.path]"
               class="shrink-0 rounded-sm border border-[#e6e1d8] bg-[#f3f0e9] px-1 py-0.5 text-[10px] tabular-nums text-[#777168] dark:border-[#45423c] dark:bg-[#302e29] dark:text-[#c2bdb2]"
-              :aria-label="`${projectIssueCounts[proj.path].active} open or in progress out of ${projectIssueCounts[proj.path].total} tickets`"
-              :title="`${projectIssueCounts[proj.path].active} open or in progress / ${projectIssueCounts[proj.path].total} total tickets`"
+              :aria-label="`${projectIssueCounts[proj.path]?.active} open or in progress out of ${projectIssueCounts[proj.path]?.total} tickets`"
+              :title="`${projectIssueCounts[proj.path]?.active} open or in progress / ${projectIssueCounts[proj.path]?.total} total tickets`"
             >
-              {{ projectIssueCounts[proj.path].active }} / {{ projectIssueCounts[proj.path].total }}
+              {{ projectIssueCounts[proj.path]?.active }} / {{ projectIssueCounts[proj.path]?.total }}
             </span>
             <kbd class="ml-2 shrink-0 text-right font-mono text-[10px] tabular-nums opacity-60 transition-opacity group-hover:opacity-0" aria-hidden="true">{{ projectIndex + 1 }}</kbd>
           </Button>
