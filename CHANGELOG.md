@@ -2,7 +2,7 @@
 
 ## [2.26.0] - 2026-11-08
 
-> Requires **bd 0.49.x**. Recommended CLI: **br** up to 0.1.33.
+> Requires **bd 0.49.x**. Recommended CLI: **br** 0.7.x (verified with 0.7.4).
 
 ### Features
 - **Type zoom instead of UI zoom**: the header zoom controls now scale only the type scale of the

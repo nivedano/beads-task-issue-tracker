@@ -11,9 +11,9 @@ A lightweight, standalone desktop application for managing [Beads](https://githu
 >
 > As the Beads ecosystem evolves toward autonomous multi-agent orchestration, we believe the transition should be progressive. Most developers today work **with** AI, not behind it — they need to see what's happening, understand it, and stay in control. That's what PaiR is built for: a smooth, step-by-step transition from pair programming to broader AI delegation, without losing visibility along the way.
 >
-> PaiR is fully independent: built-in CLI, own storage format (`.pair/`), zero external dependencies. Your existing `.beads/` data is never modified or overwritten — PaiR stores everything in its own directory. **Migration is automatic** for projects using `bd` 0.49.x (pre-Dolt) or `br` up to 0.1.33. Projects running `bd` 0.50+ (Dolt-based) are not currently supported for migration.
+> PaiR is fully independent: built-in CLI, own storage format (`.pair/`), zero external dependencies. Your existing `.beads/` data is never modified or overwritten — PaiR stores everything in its own directory. **Migration is automatic** for projects using `bd` 0.49.x (pre-Dolt) or `br` 0.7.x. Projects running `bd` 0.50+ (Dolt-based) are not currently supported for migration.
 >
-> The Beads Task-Issue Tracker remains available and functional with `bd` 0.49.x and `br` up to 0.1.33, but active development has moved to PaiR.
+> The Beads Task-Issue Tracker remains available and functional with `bd` 0.49.x and `br` 0.7.x, but active development has moved to PaiR.
 
 ## Why This App?
 
@@ -68,7 +68,7 @@ The app uses a **native file watcher** on the `.beads` directory. When an AI age
 - **Extended Status Support**: All active Beads statuses handled — `deferred`, `pinned`, and `hooked`
 - **Advanced Filters**: Multi-select filters by type, status, priority, labels, and assignee
 - **Exclusion Filters**: Hide specific issues by criteria (inverse filtering)
-- **Search**: Find issues by title, ID, or description
+- **Search**: Find issues by title, ID, or label
 - **Column Customization**: Show/hide and configure table columns per project
 - **Smart Short IDs**: Common prefix is automatically detected and hidden for readability
 - **Collapsible Sections**: All preview sections (description, attachments, dependencies, etc.) are independently collapsible with persistent state
@@ -77,7 +77,7 @@ The app uses a **native file watcher** on the `.beads` directory. When an AI age
 - **Multi-Select**: Toggle multi-select mode to select issues individually or all at once
 - **Bulk Delete**: Delete multiple selected issues in one operation
 - **Sortable Columns**: Click any column header to sort (ascending, descending, or clear)
-- **Zoom Controls**: Adjust UI scale from 75% to 150% (Alt+Click to reset)
+- **Zoom Controls**: Adjust text scale from 75% to 150% (Alt+Click to reset). Only the type scale grows — spacing and the header stay put
 
 ### Settings & Tools
 - **Dual CLI support**: Auto-detects [`br`](https://github.com/Dicklesworthstone/beads_rust) (Rust, recommended) and [`bd`](https://github.com/steveyegge/beads) (Go) — switch between them via Settings (`Cmd/Ctrl+,`), feature profiles adapt automatically
@@ -115,7 +115,7 @@ Beyond just viewing issues, this app is part of a broader development workflow p
 
 ### Recommended: `br` (beads_rust)
 
-[**beads_rust**](https://github.com/Dicklesworthstone/beads_rust) (`br`) is our **recommended CLI** — it's faster, more optimized, and built on the proven SQLite + JSONL architecture. This is our primary choice going forward.
+[**beads_rust**](https://github.com/Dicklesworthstone/beads_rust) (`br`) is our **recommended CLI** — it's faster, more optimized, and built on the proven SQLite + JSONL architecture. This is our primary choice going forward. Verified with `br` 0.7.4; the latest release is 0.7.6.
 
 1. **Install `br`** — follow the instructions at [github.com/Dicklesworthstone/beads_rust](https://github.com/Dicklesworthstone/beads_rust)
 
