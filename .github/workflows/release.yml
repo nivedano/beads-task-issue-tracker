@@ -5,6 +5,9 @@ on:
     tags:
       - 'v*'
       - 'latest'
+  # Allows re-running a release build for an existing tag (for example after
+  # GitHub has gated the very first run of a fork's workflows).
+  workflow_dispatch:
 
 jobs:
   cleanup:
