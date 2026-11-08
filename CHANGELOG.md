@@ -5,10 +5,13 @@
 > Requires **bd 0.49.x**. Recommended CLI: **br** up to 0.1.33.
 
 ### Features
-- **Native UI zoom**: the header zoom controls now drive the webview's real zoom
-  (`webview.setZoom`) instead of CSS `zoom` on `#zoomable-content`. Text scales and reflows the way
-  it does in a browser, so the UI actually becomes more readable rather than just larger. CSS zoom
-  remains as the fallback when the API is unavailable (browser dev mode)
+- **Type zoom instead of UI zoom**: the header zoom controls now scale only the type scale of the
+  content area (`--app-zoom` multiplies `--text-xs`…`--text-4xl`), while `--spacing` is pinned to px.
+  Text gets bigger and easier to read, and the empty padding around it no longer inflates at the
+  same rate. Works in browser dev mode too, with no Tauri API involved
+- **Header no longer scales and is more compact**: `AppHeader` moved outside `#zoomable-content`, so
+  zoom leaves it untouched; vertical padding, the logo, the title and the control buttons were
+  reduced, giving the content more room
 - **Windows in-app title bar**: Windows now runs undecorated — `AppHeader` is the title bar and
   carries the File/Edit/Window menu plus minimize/maximize/close controls, instead of three stacked
   native bars. macOS keeps its overlay title bar, Linux keeps native decorations. Known cost:

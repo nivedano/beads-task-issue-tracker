@@ -623,6 +623,34 @@ body {
   }
 }
 
+/* ──────────────────────────────────────────────────────────────────────────────
+   UI zoom — type zoom, not layout zoom
+
+   `--app-zoom` (set by `useZoom`) multiplies only the type scale, while
+   `--spacing` is pinned to px so padding, gaps and fixed sizes keep their
+   physical size. Zooming in therefore grows the text — the content that
+   actually needs to be readable — instead of inflating the empty space
+   around it.
+
+   The rules are scoped to `#zoomable-content`: the header and footer live
+   outside it and never scale.
+   ────────────────────────────────────────────────────────────────────────────── */
+
+#zoomable-content {
+  /* Tailwind's default is 0.25rem (== 4px at a 16px root). Pinning it to px
+     detaches spacing from the type scale, which is what the zoom multiplies. */
+  --spacing: 4px;
+
+  --text-xs: calc(0.75rem * var(--app-zoom, 1));
+  --text-sm: calc(0.875rem * var(--app-zoom, 1));
+  --text-base: calc(1rem * var(--app-zoom, 1));
+  --text-lg: calc(1.125rem * var(--app-zoom, 1));
+  --text-xl: calc(1.25rem * var(--app-zoom, 1));
+  --text-2xl: calc(1.5rem * var(--app-zoom, 1));
+  --text-3xl: calc(1.875rem * var(--app-zoom, 1));
+  --text-4xl: calc(2.25rem * var(--app-zoom, 1));
+}
+
 /* Electron window drag regions (macOS titleBarStyle: hiddenInset) */
 .app-drag-region {
   -webkit-app-region: drag;

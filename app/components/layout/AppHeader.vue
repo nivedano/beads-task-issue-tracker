@@ -69,7 +69,7 @@ const handleZoomIn = (event: MouseEvent) => {
        Windows/Linux: this row IS the title bar — it carries the menu bar and window controls. -->
   <header
     class="flex items-center justify-center border-b border-border bg-card relative app-drag-region"
-    :class="isMacOS ? 'pl-20 pr-4 py-3' : 'pl-2 pr-0 py-2'"
+    :class="isMacOS ? 'pl-20 pr-4 py-1.5' : 'pl-2 pr-0 py-1'"
     data-tauri-drag-region
     @mousedown="handleMouseDown"
   >
@@ -79,9 +79,9 @@ const handleZoomIn = (event: MouseEvent) => {
     </div>
 
     <!-- Centered title with icon - pointer-events-none to allow drag through -->
-    <div v-if="!editContext" class="flex items-center gap-3 pointer-events-none">
+    <div v-if="!editContext" class="flex items-center gap-2 pointer-events-none">
       <svg
-        class="w-8 h-8"
+        class="w-6 h-6"
         viewBox="0 0 24 24"
         fill="none"
         stroke-width="2"
@@ -94,11 +94,11 @@ const handleZoomIn = (event: MouseEvent) => {
         <circle cx="20" cy="5" r="3" fill="#eab308" />
         <circle cx="12" cy="18" r="3" fill="#ef4444" />
       </svg>
-      <h1 class="text-lg font-semibold text-foreground leading-tight flex items-center gap-2 truncate max-w-[45vw]">
+      <h1 class="text-base font-semibold text-foreground leading-tight flex items-center gap-2 truncate max-w-[45vw]">
         {{ displayTitle }}
         <svg
           v-if="isExposed"
-          class="w-4 h-4 text-green-500"
+          class="w-3.5 h-3.5 text-green-500"
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
@@ -129,7 +129,7 @@ const handleZoomIn = (event: MouseEvent) => {
           <Button
             variant="ghost"
             size="icon"
-            class="h-8 w-8"
+            class="h-7 w-7"
             aria-label="Help and keyboard shortcuts"
             @click="openHelp"
           >
@@ -157,7 +157,7 @@ const handleZoomIn = (event: MouseEvent) => {
           <Button
             variant="ghost"
             size="icon"
-            class="h-8 w-8"
+            class="h-7 w-7"
             :disabled="!canZoomOut && zoomLevel === 100"
             @click="handleZoomOut"
           >
@@ -184,7 +184,7 @@ const handleZoomIn = (event: MouseEvent) => {
           <Button
             variant="ghost"
             size="icon"
-            class="h-8 w-8"
+            class="h-7 w-7"
             :disabled="!canZoomIn && zoomLevel === 100"
             @click="handleZoomIn"
           >
@@ -211,7 +211,7 @@ const handleZoomIn = (event: MouseEvent) => {
           <Button
             variant="ghost"
             size="icon"
-            class="h-8 w-8"
+            class="h-7 w-7"
             @click="emit('refresh')"
           >
             <svg
@@ -235,7 +235,7 @@ const handleZoomIn = (event: MouseEvent) => {
           <Button
             variant="ghost"
             size="icon"
-            class="h-8 w-8"
+            class="h-7 w-7"
             @click="cycleTheme"
           >
             <!-- Sun icon (light theme) -->

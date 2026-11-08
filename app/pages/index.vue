@@ -929,18 +929,19 @@ watch(
 </script>
 
 <template>
-  <div class="fixed inset-0 grid grid-rows-[1fr_auto] bg-background">
-    <!-- Zoomable content (header + panels) -->
-    <div id="zoomable-content" class="grid grid-rows-[auto_1fr] overflow-hidden">
-      <!-- Header -->
-      <AppHeader
-        :project-name="currentProjectName"
-        :edit-context="editContext"
-        :edit-id="editId"
-        :show-refresh="!showOnboarding"
-        :is-exposed="isCurrentProjectExposed"
-        @refresh="handleRefresh"
-      />
+  <div class="fixed inset-0 grid grid-rows-[auto_1fr_auto] bg-background">
+    <!-- Header — deliberately outside the zoom scope, so it never scales -->
+    <AppHeader
+      :project-name="currentProjectName"
+      :edit-context="editContext"
+      :edit-id="editId"
+      :show-refresh="!showOnboarding"
+      :is-exposed="isCurrentProjectExposed"
+      @refresh="handleRefresh"
+    />
+
+    <!-- Zoomable content (panels only — the header above stays fixed size) -->
+    <div id="zoomable-content" class="grid grid-rows-[1fr] overflow-hidden">
 
     <!-- Desktop Layout (3 columns) -->
     <div v-if="!isMobileView" class="flex overflow-hidden">

@@ -69,7 +69,7 @@
 | `useNotification.ts` | `useNotification()` | Toast notifications — auto-dismiss after 5s, theme-aware light/dark styles |
 | `useTheme.ts` | `useTheme()` | Dark/light mode toggle |
 | `useCollapsible.ts` | `useCollapsible()` | Panel collapse state (dashboard, project sections) |
-| `useZoom.ts` | `useZoom()` | UI zoom 75-150%. Uses the webview's native `setZoom` (scales text and reflows like browser zoom); CSS `zoom` on `#zoomable-content` is only the fallback in browser dev mode |
+| `useZoom.ts` | `useZoom()` | Type zoom 75-150%. Sets `--app-zoom`, which multiplies the type scale of `#zoomable-content` while `--spacing` stays pinned to px (see the "UI zoom" block in `assets/css/tailwind.css`). Text grows, whitespace does not; the header sits outside `#zoomable-content` and never scales |
 | `useAppMenu.ts` | `useAppMenu()` | Native menu (macOS) or in-app menu bar state + keyboard accelerators (Windows/Linux) |
 | `useTauriWindow.ts` | `useTauriWindow()` | Window drag for custom title bar, dynamic window title (project name), minimize/maximize/close controls |
 | `usePlatform.ts` | `usePlatform()` | Platform flags (`isMacOS`/`isWindows`/`isLinux`) driving window-chrome differences |

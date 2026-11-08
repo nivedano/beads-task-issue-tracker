@@ -1,25 +1,3 @@
-import { isTauri, logFrontend } from '~/utils/bd-api'
-
-let webviewModule: typeof import('@tauri-apps/api/webview') | null = null
-let webviewModuleLoad: Promise<void> | null = null
-
-// Lazily load the Tauri webview module — not available in browser dev mode.
-function loadWebviewModule(): Promise<void> {
-  if (!webviewModuleLoad) {
-    webviewModuleLoad = import('@tauri-apps/api/webview')
-      .then((mod) => { webviewModule = mod })
-      .catch(() => { /* Not in Tauri environment */ })
-  }
-  return webviewModuleLoad
-}
-
-function applyCssZoom(percent: number) {
-  const zoomableContent = document.getElementById('zoomable-content')
-  if (zoomableContent) {
-    zoomableContent.style.zoom = `${percent}%`
-  }
-}
-
 export function useZoom() {
   const zoomLevel = useLocalStorage('beads:zoomLevel', 100)
   const minZoom = 75
@@ -46,33 +24,23 @@ export function useZoom() {
   }
 
   /**
-   * Prefer the webview's native zoom: unlike CSS `zoom` it scales text as well
-   * as layout (real browser-zoom semantics), so the UI actually becomes more
-   * readable instead of just larger.
+   * Type zoom rather than UI zoom.
+   *
+   * `--app-zoom` scales only the type scale of `#zoomable-content` (see the
+   * "UI zoom" block in `assets/css/tailwind.css`), while spacing stays pinned
+   * to px. Text therefore gets bigger and easier to read without the empty
+   * padding around it growing at the same rate. The header sits outside the
+   * zoom scope, so it never scales.
    */
-  const applyZoom = async () => {
+  const applyZoom = () => {
     if (!import.meta.client) return
 
-    // Clear zoom left on the document by older releases.
+    // Clean up the CSS zoom that older releases applied to the whole content box.
     document.documentElement.style.zoom = ''
+    const zoomableContent = document.getElementById('zoomable-content')
+    if (zoomableContent) zoomableContent.style.zoom = ''
 
-    if (isTauri()) {
-      await loadWebviewModule()
-      if (webviewModule) {
-        try {
-          await webviewModule.getCurrentWebview().setZoom(zoomLevel.value / 100)
-          // Drop any CSS zoom so it cannot compound with the native one.
-          const zoomableContent = document.getElementById('zoomable-content')
-          if (zoomableContent) zoomableContent.style.zoom = ''
-          return
-        } catch (error) {
-          logFrontend('warn', `[zoom] native webview zoom failed, falling back to CSS: ${error}`)
-        }
-      }
-    }
-
-    // Browser dev mode (or unsupported platform): CSS zoom is the best we have.
-    applyCssZoom(zoomLevel.value)
+    document.documentElement.style.setProperty('--app-zoom', String(zoomLevel.value / 100))
   }
 
   const canZoomIn = computed(() => zoomLevel.value < maxZoom)
@@ -80,7 +48,7 @@ export function useZoom() {
 
   // Initialize on mount
   onMounted(() => {
-    void applyZoom()
+    applyZoom()
   })
 
   return {
