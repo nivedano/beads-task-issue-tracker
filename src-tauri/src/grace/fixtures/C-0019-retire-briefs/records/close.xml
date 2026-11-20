@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Close change="C-0019-retire-briefs" revision="1" contract-sha256="475e960d00ca71cd5b021dd98fd95438fb267b1997d5375ef1313fcbbb168000" date="2026-11-17T09:52:04.452Z" source-revision="81b53499821041d26d0c1e9ea89071a158f24b4d" candidate="94bd7e2333d4d384cd281fd22c7b394dd845b78259f9bff46f7fb54755990e96" start-revision="9adfc0167c6a72137371aebb17f6fe229b3d6000" brief="brief-1.html" approval="approval-1.xml" review="1" kernel="grace5 0.8.0">
+  <Satisfied check="CK1" kind="automated" run="3" claim="command-completion"/>
+  <Satisfied check="CK2" kind="automated" run="3" claim="command-completion"/>
+  <Satisfied check="CK3" kind="automated" run="3" claim="command-completion"/>
+  <Satisfied check="CK4" kind="automated" run="3" claim="command-completion"/>
+  <Satisfied check="CK5" kind="trace" run="3" claim="marker-sequence-unattributed"/>
+  <Satisfied check="CK6" kind="automated" run="3" claim="command-completion"/>
+  <Satisfied check="CK7" kind="automated" run="3" claim="command-completion"/>
+  <Satisfied check="CK8" kind="trace" run="3" claim="marker-sequence-unattributed"/>
+</Close>

@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Run change="C-0019-retire-briefs" revision="1" contract-sha256="475e960d00ca71cd5b021dd98fd95438fb267b1997d5375ef1313fcbbb168000" n="1" run-id="9895fbab3b3446fc94a5d97b43411bfa" started="2026-11-17T07:57:19.842Z" ended="2026-11-17T08:00:39.676Z" status="completed" start="true" source-revision="9adfc0167c6a72137371aebb17f6fe229b3d6000" dirty="false" candidate="f143e474f5a02de5fa3879ed88b8eaa206b91fe79b78ed7936a751717e9ff47c" kernel="grace5 0.8.0">
+  <Result check="CK1" kind="automated" required="true" definition-sha256="5ee2e0cc7401a5a9e8886e6df2b370b5c4280195e1bc1177ff4042d7b31ef669" verdict="passed" claim="command-completion" cwd="." exit="0" elapsed-ms="8108" log="records/logs/run-1/CK1.log" log-sha256="8366207267355d3e3d5bf3bf6e8c94c5f93f6078c34f08973fa2b38cdda6cc92">
+    <Definition>kind=automated
+id=CK1
+required=true
+cwd=.
+budget=120
+command=bun run check
+</Definition>
+  </Result>
+  <Result check="CK2" kind="automated" required="true" definition-sha256="304329f8cf03862db6c42a40c16df5c7ad12b6e34966692b42125a786ab2d011" verdict="passed" claim="command-completion" cwd="." exit="0" elapsed-ms="178779" log="records/logs/run-1/CK2.log" log-sha256="89f6eea75c65578aee72255d6d613c875a1f52d3ccbc5580162f1aed84d107e7">
+    <Definition>kind=automated
+id=CK2
+required=true
+cwd=.
+budget=600
+command=bun test --parallel
+</Definition>
+  </Result>
+  <Result check="CK3" kind="automated" required="true" definition-sha256="3a1b563cc9d6f6a6a8e7e8d41421ea14e297f1a96663e086372036c089b6fd47" verdict="passed" claim="command-completion" cwd="." exit="0" elapsed-ms="9968" log="records/logs/run-1/CK3.log" log-sha256="e9b1973d353b991782b98466cd19118de6db87282fde1174d7ef8e7e3e935b11">
+    <Definition>kind=automated
+id=CK3
+required=true
+cwd=.
+budget=120
+command=bun run examples:verify
+</Definition>
+  </Result>
+  <Result check="CK4" kind="automated" required="true" definition-sha256="a2697c3dc38ba7b772fa3f56b469dde69471f946c6b933def90bbbedbcae571b" verdict="passed" claim="command-completion" cwd="." exit="0" elapsed-ms="534" log="records/logs/run-1/CK4.log" log-sha256="a52669258f71e8d03f89fae509d55f3b941c7eddf0cf1b882f0b6c360f66b688">
+    <Definition>kind=automated
+id=CK4
+required=true
+cwd=.
+budget=120
+command=bun run package:verify
+</Definition>
+  </Result>
+  <Result check="CK6" kind="automated" required="true" definition-sha256="c4a4bbcbb102575a5bd802a5edaca5c6ac6bb788acee878dc0abac121f49c07c" verdict="failed" cwd="." exit="1" elapsed-ms="91" log="records/logs/run-1/CK6.log" log-sha256="a53b19bbb92bf1576250a09dab1298a5c8ebedbf15a49c2b31894e7f24a313bc">
+    <Definition>kind=automated
+id=CK6
+required=true
+cwd=.
+budget=180
+command=bun test src/conformance/briefless.test.ts
+</Definition>
+    <Reason>exit 1</Reason>
+  </Result>
+  <Result check="CK7" kind="automated" required="true" definition-sha256="174ddd08fe013a683cd33af297b66a13457e37b5a722cf2a4bdbecb82a96815c" verdict="passed" claim="command-completion" cwd="." exit="0" elapsed-ms="2342" log="records/logs/run-1/CK7.log" log-sha256="92a611a6269617ee93f94363b830129dd2e755c2bebbc750e8e226c9fad7cad2">
+    <Definition>kind=automated
+id=CK7
+required=true
+cwd=.
+budget=120
+command=bun -e "const cp=require('child_process'); const ids=['C-0008-approval-executes','C-0009-decision-not-conversation','C-0011-clean-skill-source']; for (const id of ids){const r=cp.spawnSync('bun',['src/cli.ts','check',id]); if(r.status!==0){process.stdout.write(r.stdout);process.stderr.write(r.stderr);process.exit(1);}} console.log('legacy records: ok');"
+</Definition>
+  </Result>
+</Run>

@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Brief: C-0019-retire-briefs revision 1</title>
+<meta name="grace5:change" content="C-0019-retire-briefs">
+<meta name="grace5:revision" content="1">
+<meta name="grace5:contract-sha256" content="475e960d00ca71cd5b021dd98fd95438fb267b1997d5375ef1313fcbbb168000">
+<meta name="grace5:date" content="2026-11-17">
+<meta name="grace5:writer" content="independent">
+<meta name="grace5:basis" content="full">
+<meta name="grace5:words" content="1173">
+<meta name="grace5:target-words" content="600">
+<meta name="grace5:checks" content="8">
+<meta name="grace5:target-checks" content="8">
+<style>
+:root{--bg:#15181d;--surface:#1b1f26;--ink:#dfe3ea;--muted:#98a1ae;--line:#343b46;--go:#6aaee6;--stop:#d9904f;color-scheme:dark}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 "PT Sans",system-ui,sans-serif}
+header,main,footer{max-width:980px;margin:0 auto;padding:0 24px}
+header{padding-top:28px}
+h1{font-size:22px;margin:0 0 4px}
+p.lead{color:var(--muted);margin:0 0 18px}
+section{background:var(--surface);border:1px solid var(--line);padding:12px 14px;margin:0 0 12px}
+h2{font-size:16px;margin:0 0 8px}
+h3{font-size:13px;font-weight:400;color:var(--muted);margin:12px 0 4px}
+ul{margin:0;padding-left:20px}
+li{margin:2px 0}
+code,.protected li,td:first-child b,#decisions b{font-family:"PT Mono",ui-monospace,Consolas,monospace;font-size:13px}
+.protected{padding-left:0;list-style:none}
+.protected li{color:var(--stop)}
+table{width:100%;border-collapse:collapse}
+th{font-size:13px;font-weight:400;color:var(--muted);text-align:left;padding:0 12px 6px 0}
+td{padding:6px 12px 6px 0;border-top:1px solid var(--line);vertical-align:top}
+td:first-child{color:var(--muted);font-size:13px;width:22%}
+td:first-child span{display:block;color:var(--ink);font-size:15px}
+td:first-child b{color:var(--ink)}
+td.shows{width:40%}
+td.limits:empty::after{content:"No limitation stated";color:var(--muted)}
+.manual td:first-child{color:var(--stop)}
+.trace td:first-child::after{content:" (device)";color:var(--stop)}
+.optional td{color:var(--muted)}
+#decisions ul,#findings ul{padding-left:0;list-style:none}
+#decisions li,#findings li{display:grid;grid-template-columns:44px minmax(0,1fr)}
+#decisions b{font-weight:400;color:var(--go)}
+#burdens li{color:var(--ink)}
+#burdens{border-color:var(--stop)}
+#findings li{grid-template-columns:76px minmax(0,1fr);color:var(--muted);font-size:13px}
+#findings li[data-finding=open]>span:first-child{color:var(--stop)}
+footer{color:var(--muted);font-size:13px;padding-top:2px;padding-bottom:40px}
+footer p{margin:0 0 4px}
+footer .say{color:var(--ink);font-size:15px;margin-top:12px}
+:root{--diff-add:#a3e3b7;--diff-add-bg:#163226;--diff-mod:#f1ce8e;--diff-mod-bg:#332b1b;--diff-del:#f1b0b3;--diff-del-bg:#3b2227}
+.diff-legend{display:flex;flex-wrap:wrap;gap:8px 18px;align-items:center;margin:0 0 18px;padding:10px 12px;border:1px solid var(--line);border-radius:4px;font-size:13px;color:var(--muted)}
+.diff-legend .key{display:inline-flex;gap:6px;align-items:center}
+.diff-legend .key-add{color:var(--diff-add)}
+.diff-legend .key-mod{color:var(--diff-mod)}
+.diff-legend .key-del{color:var(--diff-del)}
+.diff-mark{display:inline;font-family:ui-monospace,Consolas,monospace;font-weight:700;margin-right:5px}
+.diff-added,.diff-modified,.diff-removed{padding:5px 8px;border-left:3px solid;border-radius:2px}
+.diff-added{color:var(--diff-add);background:var(--diff-add-bg);border-color:var(--diff-add)}
+.diff-modified{color:var(--diff-mod);background:var(--diff-mod-bg);border-color:var(--diff-mod)}
+.diff-removed{color:var(--diff-del);background:var(--diff-del-bg);border-color:var(--diff-del);text-decoration:line-through}
+span.diff-added,span.diff-modified,span.diff-removed{padding:0 3px;border-left-width:2px;box-decoration-break:clone;-webkit-box-decoration-break:clone}
+tr.diff-added,tr.diff-modified,tr.diff-removed{padding:0}
+td:first-child .diff-mark{display:inline}
+#decisions li.diff-added b,#decisions li.diff-modified b,#decisions li.diff-removed b{color:inherit}
+@media print{:root{--bg:#fff;--surface:#fff;--ink:#000;--muted:#444;--line:#bbb;--go:#1f6fb2;--stop:#b8641c;color-scheme:light}section{break-inside:avoid}}
+@media print{:root{--diff-add:#19552f;--diff-add-bg:#eef8f0;--diff-mod:#704800;--diff-mod-bg:#fff7e4;--diff-del:#8f2731;--diff-del-bg:#fff0f1}.diff-legend,.diff-added,.diff-modified,.diff-removed{print-color-adjust:exact}}
+</style>
+</head>
+<body>
+<header>
+  <h1>The contract is the approval surface; the separate brief is retired</h1>
+  <p class="lead">Brief for approval. Change <code>C-0019-retire-briefs</code>, revision 1, 2026-11-17. Full brief, written by: independent reader.</p>
+</header>
+<main>
+  <section id="result">
+    <h2>What you get</h2>
+    <div>
+      <ul>
+        <li>The contract itself becomes the approval surface: you read <code>contract.xml</code> and answer in one statement, and no separate HTML page is written for this change or any later one.</li>
+        <li>Pre-approval independence survives in a lighter form: an independent subagent that did not write the contract receives the contract, the cited rules and read access, and returns findings only. It writes no page and no fidelity parser.</li>
+        <li>Legacy records stay readable: a brief, approval or close record already written keeps its bytes and its hashes, and a legacy approval that carries <code>brief-sha256</code> still requires its brief to match.</li>
+        <li>Brief-derived measurements become unavailable for new changes; replacing them is a separate decision for the control center, not this change.</li>
+        <li>This is the last brief. The change retires the artifact after this page, and its own bootstrap is your approval of this one page: no approval exists yet, and none is inferred.</li>
+      </ul>
+    </div>
+  </section>
+  <section id="evidence">
+    <h2>What will count as done</h2>
+    <div>
+      <table>
+        <thead><tr><th>Check</th><th>If it passes, we know</th><th>Even then, we do not know</th></tr></thead>
+        <tbody>
+          <tr class="automated" data-check="CK1" data-kind="automated" data-required="true"><td><span>Kernel type-checks</span><b>CK1</b> automated</td><td class="shows">A pass shows the TypeScript kernel compiles with no type error, so the legacy/new gate and the parser kept for legacy records still build. It rejects a gate that branches on a brief field the record no longer carries, or a legacy path left with a type error.</td><td class="limits">A clean compile says nothing about behaviour: a branch that still demands a brief, or one that no longer refuses a mismatched legacy brief, type-checks as well as the correct one.</td></tr>
+          <tr class="automated" data-check="CK2" data-kind="automated" data-required="true"><td><span>Full conformance suite</span><b>CK2</b> automated</td><td class="shows">A pass shows every conformance case runs green, the new briefless cases and the retained legacy cases included. It rejects a gate that refuses a briefless change, or one that accepts a legacy approval whose brief no longer matches.</td><td class="limits">The suite proves only the cases it contains; a gate path with no case is not covered, and a test that asserts too little passes like a decisive one.</td></tr>
+          <tr class="automated" data-check="CK3" data-kind="automated" data-required="true"><td><span>Worked examples verify</span><b>CK3</b> automated</td><td class="shows">A pass shows the historical examples, the legacy <code>defective-brief</code> fixture included, still validate and read with no defect. It rejects a parser change that makes the legacy fixture unreadable or its example checks fail.</td><td class="limits">The examples are a fixed set; a defect in a closed change outside them does not appear here.</td></tr>
+          <tr class="automated" data-check="CK4" data-kind="automated" data-required="true"><td><span>Generated packages current</span><b>CK4</b> automated</td><td class="shows">A pass shows the generated skill packages and the CLI reference match their sources. It rejects guidance edited in <code>skills/</code> without regenerating <code>packages/</code>, or help text changed without regenerating <code>cli-reference.md</code>.</td><td class="limits">It compares generated bytes with their sources; it does not show the generated guidance is truthful, only that it is current.</td></tr>
+          <tr class="trace" data-check="CK5" data-kind="trace" data-required="true"><td><span>Briefless guidance text</span><b>CK5</b> trace</td><td class="shows">A pass shows the prepare, orchestrate, execute and review skills and <code>method.md</code>, <code>authorization.md</code> and <code>commands.md</code> no longer instruct an independent brief, a brief writer or a brief-for-approval handoff, and that prepare guidance names an independent contract read. It rejects a file left naming the retired page, the brief writer or the handoff. The command prints its own success marker, and that marker appears only after all seven files are read, so a run that fails or a file that is missing or unreadable fails too: a bare absence of the forbidden phrases cannot pass.</td><td class="limits">It is a text scan over seven files: a missing phrase does not show the remaining wording is coherent, and it reads neither <code>README.md</code>, <code>AGENTS.md</code>, the generated <code>packages/**</code> nor the other method documents.</td></tr>
+          <tr class="automated" data-check="CK6" data-kind="automated" data-required="true"><td><span>Briefless lifecycle test</span><b>CK6</b> automated</td><td class="shows">A pass shows a new change with no brief is approved, started, run, reviewed and closed without a missing brief being named, and that a legacy change with <code>brief-sha256</code> still validates and still refuses on a mismatch. It rejects a gate that names a missing brief or demands a brief hash for a new approval.</td><td class="limits">One test file covers the paths it names; the rest of the gate surface rests on the suite at CK2.</td></tr>
+          <tr class="automated" data-check="CK7" data-kind="automated" data-required="true"><td><span>Legacy closed changes read</span><b>CK7</b> automated</td><td class="shows">A pass shows three closed changes still read with no defect after the change. It rejects a parser or reader change that makes a legacy approval or brief unreadable.</td><td class="limits">It reads three closed changes by id, not every closed change; a defect in another closed change would not appear here.</td></tr>
+          <tr class="trace" data-check="CK8" data-kind="trace" data-required="true"><td><span>Retired documents leave git</span><b>CK8</b> trace</td><td class="shows">A pass shows <code>models/architecture/brief.md</code> and <code>models/architecture/templates/brief.html</code> are no longer tracked while <code>models/architecture/authorization.md</code> remains. It rejects the two documents left tracked after being deleted only from the working tree. The command lists tracked files and the marker it requires is the surviving document, so an empty or failed listing fails before any absence can be read as success.</td><td class="limits">A tracked-file listing says nothing about whether every reader of those documents was updated; a deleted document still referenced in prose passes.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+  <section id="decisions">
+    <h2>Decisions for review</h2>
+    <div>
+      <ul>
+        <li data-decision="D1"><b>D1</b><span>The owner reads the contract and answers in one statement; its Problem, Change, Constraints, NonGoals, Acceptance, Affected, Checks and Decisions are the approval surface.</span></li>
+        <li data-decision="D2"><b>D2</b><span>A new approval binds the contract hash, each check's definition hash and the decision; <code>brief-sha256</code> is legacy and is neither required nor invented.</span></li>
+        <li data-decision="D3"><b>D3</b><span>A legacy approval that carries <code>brief-sha256</code> keeps its brief obligation; a new approval without it has none, and no historical record is rewritten.</span></li>
+        <li data-decision="D4"><b>D4</b><span><code>check</code>, <code>run</code> and <code>close</code> tell the two cases apart by the presence of <code>brief-sha256</code>; they never infer a brief from a file on disk.</span></li>
+        <li data-decision="D5"><b>D5</b><span>The brief documents and template leave the active surface; the parser stays only to validate legacy briefs and keep historical examples and closed changes readable.</span></li>
+        <li data-decision="D6"><b>D6</b><span>The independent review is unchanged: it still reads the contract, the complete diff, receipts and cited rules, and judges per-check adequacy and findings without a brief.</span></li>
+        <li data-decision="D7"><b>D7</b><span>Brief-derived measurements become unavailable for new changes; the control center's method is not changed here and decides their replacement separately.</span></li>
+        <li data-decision="D8"><b>D8</b><span>This change registers no release or migration boundary; implementation and tests may be prepared, and the release act registers the boundary it carries.</span></li>
+        <li data-decision="D9"><b>D9</b><span>Pre-approval independence survives as a findings-only independent contract read: a subagent that did not write the contract receives it, the cited rules and read access, and returns findings the author resolves before the owner gate; no page, fidelity parser or owner-facing brief returns.</span></li>
+        <li data-decision="D10"><b>D10</b><span>The seven prepared changes keep their briefs as history; all seven protect <code>templates/**</code> and four also protect <code>brief.md</code>, so this change runs after them unless their own approved revisions drop the protection.</span></li>
+      </ul>
+    </div>
+  </section>
+  <section id="risks">
+    <h2>Risks</h2>
+    <div>
+      <ul>
+        <li>Your whole read becomes the contract: the tradeoffs and effort the page used to spell out must be legible in the contract, or a boundary you would have questioned passes unread.</li>
+        <li>The independent read returns findings and writes no record, so nothing outside the contract shows that the read happened or what it found.</li>
+        <li>Legacy and new paths diverge in the gates; a wrong presence test on <code>brief-sha256</code> can accept an unapproved legacy change or refuse a valid briefless one.</li>
+        <li>Brief-derived metrics stop for new changes, so measurement continuity breaks until the control center decides a replacement.</li>
+        <li>CK5 and CK8 are text and tracked-file scans: guidance elsewhere, and a reference in prose to a deleted document, can still point at the retired brief without failing either.</li>
+        <li>The parser stays for legacy records while the documents that define the format leave the tree, so the legacy path is exercised only by old records and can drift untested.</li>
+        <li>This change removes its own artifact: after it closes no revision of a later change gets a page, so a future material revision relies on the contract and its difference being legible there.</li>
+      </ul>
+    </div>
+  </section>
+  <section id="burdens">
+    <h2>Approval decisions and effort</h2>
+    <div>
+      <ul>
+        <li>Approve or reject this page. Your decision is recorded separately and is the only bootstrap for the change: no approval exists yet, and none is inferred.</li>
+        <li>Rule whether the contract alone is enough at the gate: after this change there is no page to read, and the tradeoffs must be read from the contract.</li>
+        <li>Decide separately how brief-derived measurements are replaced; this change leaves the control center's method untouched.</li>
+        <li>Accept that historical briefs stay readable and frozen, and that no brief is rewritten or removed.</li>
+        <li>Sequence the work: this change runs only after the seven prepared changes close or drop their protection of <code>templates/**</code> and <code>brief.md</code>, so their order may need your ruling.</li>
+        <li>Expect the guidance to be reworded so the retired page name is absent from the scanned files while <code>authorization.md</code> still documents the legacy <code>brief-sha256</code> binding; the two are held together by wording, not by an exception.</li>
+      </ul>
+    </div>
+  </section>
+  <section id="boundaries">
+    <h2>Where it may reach</h2>
+    <div>
+      <ul class="writes">
+        <li>The GRACE 5 method documents under <code>models/architecture/**</code>, including removing <code>brief.md</code> and <code>templates/brief.html</code> from the active surface.</li>
+        <li>The kernel under <code>src/**</code>: the parser kept for legacy briefs, and the <code>check</code>, <code>run</code> and <code>close</code> gates.</li>
+        <li>The skills under <code>skills/**</code>, the generated packages under <code>packages/**</code>, and <code>AGENTS.md</code> and <code>README.md</code>.</li>
+        <li>It may prepare migration implementation and tests, but it registers no version, pin, tag or migration-table row.</li>
+        <li>It adds no command, check kind, receipt field, review rule or approval artifact; the only artifact it removes is the brief, and checks, receipts, complete-diff review, protected paths and closure are unchanged.</li>
+      </ul>
+      <h3>Left alone on purpose</h3>
+      <ul class="exclusions">
+        <li>Nothing weakens checks, independent review, receipt provenance, protected paths or closure.</li>
+        <li>No historical brief, approval or close record is rewritten.</li>
+        <li>No <code>sysops</code> <code>METHOD.md</code> or <code>graceopt</code> change: brief-derived metrics become unavailable for new changes and are a separate measurement decision.</li>
+        <li>No release, version, pin, tag or migration-table change.</li>
+        <li>No new approval artifact and no second decision.</li>
+      </ul>
+      <h3>Must not be written</h3>
+      <ul class="protected">
+        <li data-protected=".grace5/changes/closed/**">.grace5/changes/closed/**</li>
+        <li data-protected="models/architecture/examples/**">models/architecture/examples/**</li>
+        <li data-protected="models/architecture/schemas/common.xsd">models/architecture/schemas/common.xsd</li>
+        <li data-protected="models/architecture/schemas/contract.xsd">models/architecture/schemas/contract.xsd</li>
+        <li data-protected="models/architecture/schemas/run.xsd">models/architecture/schemas/run.xsd</li>
+        <li data-protected="models/architecture/schemas/review.xsd">models/architecture/schemas/review.xsd</li>
+        <li data-protected="models/architecture/source-identity.md">models/architecture/source-identity.md</li>
+        <li data-protected="models/architecture/trace-provenance.md">models/architecture/trace-provenance.md</li>
+        <li data-protected="models/architecture/upgrade.md">models/architecture/upgrade.md</li>
+        <li data-protected="package.json">package.json</li>
+        <li data-protected=".grace5/kernel-version">.grace5/kernel-version</li>
+        <li data-protected="CLAUDE.md">CLAUDE.md</li>
+      </ul>
+    </div>
+  </section>
+  <section id="findings">
+    <h2>Returned to the author</h2>
+    <div>
+      <ul>
+        <li data-finding="resolved"><span>Resolved</span><span>The independent read could have disappeared with the page. Resolved: the Change and D9 keep one findings-only independent contract read before the owner gate, and CK5 checks that prepare guidance names it.</span></li>
+        <li data-finding="resolved"><span>Resolved</span><span>CK5 forbids the retired page name in <code>authorization.md</code> while K3 keeps the legacy <code>brief-sha256</code> binding documented there. Resolved: the binding stays stated without the retired file name, and the scan covers the guidance files, not the historical records.</span></li>
+        <li data-finding="resolved"><span>Resolved</span><span>A missing brief would leave <code>close</code> unable to tell a briefless new approval from a legacy one. Resolved: the gates key on the presence of <code>brief-sha256</code> (D4), and a mismatched legacy brief still refuses (K3, CK6).</span></li>
+        <li data-finding="resolved"><span>Resolved</span><span>K8 writes <code>close.ts</code> for the gate the change edits, where the file is <code>src/commands/close.ts</code>. Resolved: the gate is read as the close command module, which the change edits beside <code>src/state.ts</code>.</span></li>
+        <li data-finding="resolved"><span>Resolved</span><span>The change deletes the documents that define the brief while the parser stays. Resolved: the parser is kept for legacy records only (D5, K8), and CK3 and CK7 read the legacy examples and closed changes.</span></li>
+      </ul>
+    </div>
+  </section>
+</main>
+<footer>
+  <p id="size">Contract size: 1173 words against a target of 600, 8 checks against 8. The excess of 573 words is the retirement stated once with its legacy compatibility and its consumer list; the check count is at target.</p>
+  <p>This brief describes contract text with SHA-256 <code>475e960d00ca71cd5b021dd98fd95438fb267b1997d5375ef1313fcbbb168000</code>.</p>
+  <p class="say">Decision: approve, or reject with a reason. Approval is recorded separately and authorizes execution. A hold defers execution until the change or batch is explicitly started; it adds no kernel state.</p>
+</footer>
+</body>
+</html>

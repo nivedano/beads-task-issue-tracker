@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Approval change="C-0019-retire-briefs" revision="1" contract-sha256="475e960d00ca71cd5b021dd98fd95438fb267b1997d5375ef1313fcbbb168000" brief-sha256="5b449d41ccbfb051ac4098d19e0801e246fa40be33a55bb216999f43cd3e5201" date="2026-11-17" decision="approved">
+  <Statement>approved</Statement>
+  <Bound check="CK1" definition-sha256="5ee2e0cc7401a5a9e8886e6df2b370b5c4280195e1bc1177ff4042d7b31ef669"/>
+  <Bound check="CK2" definition-sha256="304329f8cf03862db6c42a40c16df5c7ad12b6e34966692b42125a786ab2d011"/>
+  <Bound check="CK3" definition-sha256="3a1b563cc9d6f6a6a8e7e8d41421ea14e297f1a96663e086372036c089b6fd47"/>
+  <Bound check="CK4" definition-sha256="a2697c3dc38ba7b772fa3f56b469dde69471f946c6b933def90bbbedbcae571b"/>
+  <Bound check="CK5" definition-sha256="a304351ccacf0d7f78f68973d7679b0e8cf551a35aca8e6d27d6af26468af778"/>
+  <Bound check="CK6" definition-sha256="c4a4bbcbb102575a5bd802a5edaca5c6ac6bb788acee878dc0abac121f49c07c"/>
+  <Bound check="CK7" definition-sha256="174ddd08fe013a683cd33af297b66a13457e37b5a722cf2a4bdbecb82a96815c"/>
+  <Bound check="CK8" definition-sha256="2df48a5e522489181609e69da40162526f9fea9ea22e4c5684c64fc179a29b13"/>
+</Approval>

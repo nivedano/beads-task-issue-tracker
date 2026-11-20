@@ -83,3 +83,173 @@ pub struct GraceContract {
     pub checks: Vec<GraceCheck>,
     pub decisions: Vec<GraceItem>,
 }
+
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct GraceBound {
+    pub check: String,
+    pub definition_sha256: String,
+}
+
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct GraceApproval {
+    pub file: String,
+    pub revision: u32,
+    pub contract_sha256: String,
+    pub brief_sha256: Option<String>,
+    pub date: Option<String>,
+    pub decision: String,
+    pub statement: String,
+    pub bound: Vec<GraceBound>,
+}
+
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct GraceTrace {
+    pub origin: Option<String>,
+    pub origin_source: String,
+    pub run_echo: bool,
+    pub capture_started: String,
+    pub capture_ended: String,
+    pub device: Option<String>,
+    pub device_source: String,
+    pub build: Option<String>,
+    pub build_source: String,
+    pub matched: u64,
+    pub expected: u64,
+    pub missing: Vec<String>,
+    pub forbidden: Vec<String>,
+}
+
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct GraceObservation {
+    pub at: String,
+    pub build: String,
+    pub environment: String,
+    pub reference: Option<String>,
+    pub note: String,
+}
+
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct GraceRunResult {
+    pub check: String,
+    pub kind: String,
+    pub required: bool,
+    pub definition_sha256: String,
+    pub definition: String,
+    pub verdict: String,
+    pub claim: Option<String>,
+    pub cwd: Option<String>,
+    pub exit: Option<i64>,
+    pub elapsed_ms: Option<u64>,
+    pub log: Option<String>,
+    pub log_sha256: Option<String>,
+    pub environment: Option<String>,
+    pub trace: Option<GraceTrace>,
+    pub observation: Option<GraceObservation>,
+    pub reason: Option<String>,
+}
+
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct GraceRun {
+    pub file: String,
+    pub n: u32,
+    pub run_id: String,
+    pub started: String,
+    pub ended: String,
+    pub status: String,
+    pub start: bool,
+    pub source_revision: String,
+    pub dirty: bool,
+    pub candidate: String,
+    pub kernel: String,
+    pub revision: u32,
+    pub contract_sha256: String,
+    pub preexisting: Vec<String>,
+    pub results: Vec<GraceRunResult>,
+}
+
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct GraceFinding {
+    pub id: String,
+    pub severity: String,
+    pub status: String,
+    pub owner_decision: Option<String>,
+}
+
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct GraceAdequacy {
+    pub check: String,
+    pub discriminates: bool,
+}
+
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct GraceRuleVerdict {
+    pub rule: String,
+    pub verdict: String,
+}
+
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct GraceReview {
+    pub file: String,
+    pub n: u32,
+    pub revision: u32,
+    pub contract_sha256: String,
+    pub status: String,
+    pub independence: String,
+    pub start_revision: String,
+    pub end_revision: String,
+    pub candidate: String,
+    pub findings: Vec<GraceFinding>,
+    pub adequacy: Vec<GraceAdequacy>,
+    pub rules: Vec<GraceRuleVerdict>,
+}
+
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct GraceSatisfied {
+    pub check: String,
+    pub kind: String,
+    pub run: u32,
+    pub claim: String,
+}
+
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct GraceNotRequired {
+    pub check: String,
+    pub verdict: Option<String>,
+}
+
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct GraceClose {
+    pub file: String,
+    pub revision: u32,
+    pub contract_sha256: String,
+    pub date: String,
+    pub source_revision: String,
+    pub candidate: String,
+    pub start_revision: String,
+    pub brief: Option<String>,
+    pub approval: String,
+    pub review: u32,
+    pub kernel: String,
+    pub satisfied: Vec<GraceSatisfied>,
+    pub not_required: Vec<GraceNotRequired>,
+}
+
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct GraceBrief {
+    pub revision: u32,
+    pub file: String,
+}
