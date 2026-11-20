@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { GraceApproval, GraceRun, GraceReview, GraceClose, GraceBrief } from '~/types/grace'
 import { Badge } from '~/components/ui/badge'
-import { graceSectionHeading as sectionHeading, graceVerdictClass } from '~/components/grace/grace-display'
+import { graceSectionHeading as sectionHeading, graceVerdictClass, graceDecisionClass, graceRunStatusClass, graceReviewStatusClass, graceCloseBadgeClass } from '~/components/grace/grace-display'
 import { Button } from '~/components/ui/button'
 
 const props = defineProps<{
@@ -17,7 +17,7 @@ const emit = defineEmits<{
   'open-file': [relPath: string]
 }>()
 
-// section heading + verdict classes come from grace-display
+// section heading + record badge classes come from grace-display
 
 const approvalsSorted = computed(() => [...props.approvals].sort((a, b) => a.revision - b.revision))
 const runsSorted = computed(() => [...props.runs].sort((a, b) => a.n - b.n))
@@ -31,14 +31,6 @@ const toggleRun = (n: number) => {
   if (next.has(n)) next.delete(n)
   else next.add(n)
   expandedRuns.value = next
-}
-
-const decisionClass = (decision: string) => {
-  switch (decision) {
-    case 'approved': return 'bg-green-600 text-white'
-    case 'rejected': return 'bg-destructive text-destructive-foreground'
-    default: return 'bg-secondary text-secondary-foreground'
-  }
 }
 </script>
 
@@ -56,7 +48,7 @@ const decisionClass = (decision: string) => {
         >
           <div class="flex flex-wrap items-center gap-1.5 text-xs">
             <Badge variant="outline" class="text-[10px] px-1 py-0 font-mono">revision {{ approval.revision }}</Badge>
-            <Badge :class="decisionClass(approval.decision)" variant="secondary" class="text-[10px] px-1 py-0">
+            <Badge :class="graceDecisionClass(approval.decision)" variant="secondary" class="text-[10px] px-1 py-0">
               {{ approval.decision }}
             </Badge>
             <span v-if="approval.date" class="text-[10px] text-muted-foreground">{{ approval.date }}</span>
@@ -99,7 +91,7 @@ const decisionClass = (decision: string) => {
               <polyline points="9 18 15 12 9 6" />
             </svg>
             <span class="font-mono">run {{ run.n }}</span>
-            <Badge variant="secondary" class="text-[10px] px-1 py-0">{{ run.status }}</Badge>
+            <Badge :class="graceRunStatusClass(run.status)" variant="secondary" class="text-[10px] px-1 py-0">{{ run.status }}</Badge>
             <span v-if="run.start" class="text-[10px] text-muted-foreground">start</span>
             <span v-if="run.dirty" class="text-[10px] text-amber-500">dirty</span>
             <span class="text-[10px] text-muted-foreground">{{ run.started }}</span>
@@ -180,7 +172,7 @@ const decisionClass = (decision: string) => {
           <div class="flex flex-wrap items-center gap-1.5 text-xs">
             <span class="font-mono">review {{ review.n }}</span>
             <Badge variant="outline" class="text-[10px] px-1 py-0 font-mono">revision {{ review.revision }}</Badge>
-            <Badge variant="secondary" class="text-[10px] px-1 py-0">{{ review.status }}</Badge>
+            <Badge :class="graceReviewStatusClass(review.status)" variant="secondary" class="text-[10px] px-1 py-0">{{ review.status }}</Badge>
             <span class="text-[10px] text-muted-foreground">{{ review.independence }}</span>
             <span class="text-[10px] text-muted-foreground font-mono">{{ review.file }}</span>
           </div>
@@ -229,6 +221,7 @@ const decisionClass = (decision: string) => {
       <h4 :class="sectionHeading">Close</h4>
       <div class="rounded border border-border p-2 space-y-1.5">
         <div class="flex flex-wrap items-center gap-1.5 text-xs">
+          <Badge :class="graceCloseBadgeClass" variant="secondary" class="text-[10px] px-1 py-0">closed</Badge>
           <Badge variant="outline" class="text-[10px] px-1 py-0 font-mono">revision {{ close.revision }}</Badge>
           <span class="text-[10px] text-muted-foreground">{{ close.date }}</span>
           <span class="text-[10px] text-muted-foreground">{{ close.kernel }}</span>
