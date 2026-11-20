@@ -77,7 +77,7 @@ pub fn grace_read_file(path: String, rel_path: String) -> Result<GraceFileConten
 #[command]
 pub fn grace_open_file(path: String, rel_path: String) -> Result<(), String> {
     let resolved = fs::resolve_grace_file(Path::new(&path), &rel_path)?;
-    fs::open_with_default_app(&resolved)
+    fs::open_with_default_app(&fs::open_argument(&resolved))
 }
 
 /// Whether the project's `.grace5` tree changed since the previous call.

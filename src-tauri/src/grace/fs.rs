@@ -60,6 +60,14 @@ pub fn resolve_grace_file(project: &Path, rel_path: &str) -> Result<PathBuf, Str
     Ok(resolved)
 }
 
+/// The path argument handed to the OS opener. `canonicalize` returns the
+/// Windows verbatim form (`\\?\C:\...`) that `cmd /C start` (ShellExecute)
+/// cannot open, so the prefix is stripped — containment was already proven on
+/// the canonical path. A no-op elsewhere.
+pub fn open_argument(resolved: &Path) -> PathBuf {
+    PathBuf::from(crate::strip_verbatim_prefix(&resolved.to_string_lossy()))
+}
+
 /// Opens a resolved file with the OS default application, mirroring
 /// `open_image_file` in `lib.rs` (the shell plugin's OpenScope only allows
 /// mailto/tel/http(s), so local paths go through the native opener).
@@ -489,6 +497,47 @@ mod tests {
         } else {
             eprintln!("skipping symlink escape: cannot create a file symlink here");
         }
+    }
+
+    #[test]
+    fn open_argument_is_stripped_and_non_verbatim_is_unchanged() {
+        let dir = TempDir::new("open-arg");
+        write_fixture_change(dir.path());
+        let resolved = resolve_grace_file(
+            dir.path(),
+            "changes/closed/C-0019-retire-briefs/notes.md",
+        )
+        .expect("notes.md resolves for opening");
+        let expected = PathBuf::from(crate::strip_verbatim_prefix(&resolved.to_string_lossy()));
+        assert_eq!(open_argument(&resolved), expected);
+        // A path without a verbatim prefix passes through untouched.
+        let plain = Path::new("plain.txt");
+        assert_eq!(open_argument(plain), PathBuf::from("plain.txt"));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn windows_open_argument_has_no_verbatim_prefix() {
+        let dir = TempDir::new("open-arg-win");
+        write_fixture_change(dir.path());
+        let resolved = resolve_grace_file(
+            dir.path(),
+            "changes/closed/C-0019-retire-briefs/notes.md",
+        )
+        .expect("notes.md resolves for opening");
+        assert!(
+            resolved.to_string_lossy().starts_with("\\\\?\\"),
+            "canonicalize returns the verbatim form: {resolved:?}"
+        );
+        let argument = open_argument(&resolved);
+        assert!(
+            !argument.to_string_lossy().starts_with("\\\\?\\"),
+            "cmd start / ShellExecute cannot open verbatim paths: {argument:?}"
+        );
+        assert_eq!(
+            argument.to_string_lossy(),
+            crate::strip_verbatim_prefix(&resolved.to_string_lossy())
+        );
     }
 
     #[test]
