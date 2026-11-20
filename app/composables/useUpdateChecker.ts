@@ -1,5 +1,5 @@
-import type { UpdateInfo } from '~/utils/bd-api'
-import { checkForUpdates, checkForUpdatesDemo, downloadAndInstallUpdate, logFrontend } from '~/utils/bd-api'
+import type { UpdateInfo } from '~/utils/br-api'
+import { checkForUpdates, checkForUpdatesDemo, downloadAndInstallUpdate, logFrontend } from '~/utils/br-api'
 import { openUrl } from '~/utils/open-url'
 
 // Global state (shared across components)

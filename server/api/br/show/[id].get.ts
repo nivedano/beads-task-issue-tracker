@@ -1,5 +1,5 @@
-import { bdShow } from '../../../utils/bd-executor'
-import { transformIssue } from '../../../utils/bd-transformers'
+import { brShow } from '../../../utils/br-executor'
+import { transformIssue } from '../../../utils/br-transformers'
 
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')
@@ -13,7 +13,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const cwd = query.path ? String(query.path) : undefined
-  const result = await bdShow(id, cwd)
+  const result = await brShow(id, cwd)
 
   if (!result.success) {
     throw createError({

@@ -2,12 +2,12 @@
  * GRACE explorer state (singleton, like `useIssues`).
  *
  * Thin orchestration only: parsing/filtering/sorting live in
- * `~/utils/grace-helpers`, IPC in `~/utils/bd-api`. A generation guard keeps
+ * `~/utils/grace-helpers`, IPC in `~/utils/br-api`. A generation guard keeps
  * late responses from a previous project or selection out of the refs.
  */
 import { ref, reactive, computed } from 'vue'
 import type { GraceStage, GraceAuthorization, GraceChangeSummary, GraceChangeDetail, GraceListResult, GraceScope, GraceSortField } from '~/types/grace'
-import { graceList, graceShow, graceCheckChanged } from '~/utils/bd-api'
+import { graceList, graceShow, graceCheckChanged } from '~/utils/br-api'
 import { filterGraceChanges, sortGraceChanges, graceStats, type GraceFilters } from '~/utils/grace-helpers'
 import { useProjectStorage } from '~/composables/useProjectStorage'
 

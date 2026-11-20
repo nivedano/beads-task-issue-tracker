@@ -32,7 +32,7 @@ export function deduplicateIssues(issues: Issue[]): Issue[] {
 /**
  * Remove closed issue IDs from dependency references.
  *
- * `bd list/show` can return stale `blockedBy`/`blocks` links after a blocker is
+ * `br list/show` can return stale `blockedBy`/`blocks` links after a blocker is
  * closed. Pruning them here keeps status-column blocker indicators accurate.
  */
 export function pruneClosedBlockers(issues: Issue[]): void {
@@ -457,7 +457,7 @@ export function computeStatsFromIssues(issues: Issue[]): DashboardStats {
 
 /**
  * Compute ready-to-work issues: open (not blocked) with no blockers.
- * Used client-side in probe mode where `bd ready` is not available.
+ * Used client-side in probe mode where `br ready` is not available.
  */
 export function computeReadyIssues(issues: Issue[]): Issue[] {
   return issues.filter(i =>

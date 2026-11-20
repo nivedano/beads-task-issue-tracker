@@ -1,5 +1,5 @@
-import { bdUpdate } from '../../../utils/bd-executor'
-import { transformIssue, priorityToNumber } from '../../../utils/bd-transformers'
+import { brUpdate } from '../../../utils/br-executor'
+import { transformIssue, priorityToNumber } from '../../../utils/br-transformers'
 
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')
@@ -18,7 +18,7 @@ export default defineEventHandler(async (event) => {
   // Convert priority from "p3" format to "3" for br CLI
   const priority = body.priority ? priorityToNumber(body.priority) : undefined
 
-  const result = await bdUpdate(
+  const result = await brUpdate(
     id,
     {
       title: body.title,

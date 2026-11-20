@@ -1,5 +1,5 @@
 import type { Issue, IssueType, IssueStatus, IssuePriority } from '~/types/issue'
-import type { PollData } from '~/utils/bd-api'
+import type { PollData } from '~/utils/br-api'
 
 /**
  * Probe response format — the shape returned by GET /metrics/:name

@@ -19,7 +19,7 @@ pub mod model;
 pub mod parse;
 pub mod state;
 
-/// Fingerprint of the last `.grace5` scan, per project (the `bd_check_changed` pattern).
+/// Fingerprint of the last `.grace5` scan, per project (the `br_check_changed` pattern).
 static GRACE_LAST_FINGERPRINT: LazyLock<Mutex<HashMap<String, (SystemTime, u64)>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 

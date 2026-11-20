@@ -3,12 +3,12 @@ import { promisify } from 'node:util'
 
 const execAsync = promisify(exec)
 
-export interface BdExecutorOptions {
+export interface BrExecutorOptions {
   args?: string[]
   cwd?: string
 }
 
-export interface BdResult<T = unknown> {
+export interface BrResult<T = unknown> {
   success: boolean
   data?: T
   error?: string
@@ -38,10 +38,10 @@ export function unwrapBrEnvelope<T = unknown>(data: unknown): T[] {
  * @param command - The br command to execute
  * @param options - Options including args and working directory
  */
-export async function executeBd<T = unknown>(
+export async function executeBr<T = unknown>(
   command: string,
-  options: BdExecutorOptions = {}
-): Promise<BdResult<T>> {
+  options: BrExecutorOptions = {}
+): Promise<BrResult<T>> {
   // Priority: options.cwd > BEADS_PATH env > process.cwd()
   const workingDir = options.cwd || process.env.BEADS_PATH || process.cwd()
   const args = options.args?.join(' ') || ''
@@ -86,9 +86,9 @@ export async function executeBd<T = unknown>(
 }
 
 /**
- * Execute bd list command with optional filters
+ * Execute br list command with optional filters
  */
-export async function bdList(
+export async function brList(
   filters?: {
     status?: string[]
     type?: string[]
@@ -118,18 +118,18 @@ export async function bdList(
     args.push(`--assignee=${filters.assignee}`)
   }
 
-  return executeBd('list', { args, cwd })
+  return executeBr('list', { args, cwd })
 }
 
 /**
- * Execute bd show command
+ * Execute br show command
  */
-export async function bdShow(id: string, cwd?: string) {
-  return executeBd('show', { args: [id], cwd })
+export async function brShow(id: string, cwd?: string) {
+  return executeBr('show', { args: [id], cwd })
 }
 
 /**
- * Execute bd create command
+ * Execute br create command
  */
 /**
  * Escape double quotes in a string for shell arguments
@@ -138,7 +138,7 @@ function escapeQuotes(str: string): string {
   return str.replace(/"/g, '\\"')
 }
 
-export async function bdCreate(
+export async function brCreate(
   title: string,
   options?: {
     description?: string
@@ -187,13 +187,13 @@ export async function bdCreate(
     args.push(`--notes="${escapeQuotes(options.notes)}"`)
   }
 
-  return executeBd('create', { args, cwd })
+  return executeBr('create', { args, cwd })
 }
 
 /**
- * Execute bd update command
+ * Execute br update command
  */
-export async function bdUpdate(
+export async function brUpdate(
   id: string,
   updates: {
     title?: string
@@ -250,49 +250,49 @@ export async function bdUpdate(
     args.push(`--notes="${escapeQuotes(updates.notes)}"`)
   }
 
-  return executeBd('update', { args, cwd })
+  return executeBr('update', { args, cwd })
 }
 
 /**
- * Execute bd close command
+ * Execute br close command
  */
-export async function bdClose(id: string, cwd?: string) {
-  return executeBd('close', { args: [id], cwd })
+export async function brClose(id: string, cwd?: string) {
+  return executeBr('close', { args: [id], cwd })
 }
 
 /**
- * Execute bd status command (dashboard stats)
+ * Execute br status command (dashboard stats)
  */
-export async function bdStatus(cwd?: string) {
-  return executeBd('status', { cwd })
+export async function brStatus(cwd?: string) {
+  return executeBr('status', { cwd })
 }
 
 /**
- * Execute bd count command (grouped counts)
+ * Execute br count command (grouped counts)
  */
-export async function bdCount(cwd?: string) {
-  return executeBd('count', { cwd })
+export async function brCount(cwd?: string) {
+  return executeBr('count', { cwd })
 }
 
 /**
- * Execute bd ready command (available work)
+ * Execute br ready command (available work)
  */
-export async function bdReady(cwd?: string) {
-  return executeBd('ready', { cwd })
+export async function brReady(cwd?: string) {
+  return executeBr('ready', { cwd })
 }
 
 /**
- * Execute bd delete command
+ * Execute br delete command
  */
-export async function bdDelete(id: string, cwd?: string) {
-  return executeBd('delete', { args: [id, '--force'], cwd })
+export async function brDelete(id: string, cwd?: string) {
+  return executeBr('delete', { args: [id, '--force'], cwd })
 }
 
 /**
- * Execute bd comments add command
+ * Execute br comments add command
  */
-export async function bdCommentsAdd(id: string, content: string, cwd?: string) {
+export async function brCommentsAdd(id: string, content: string, cwd?: string) {
   // Escape double quotes in content
   const escapedContent = content.replace(/"/g, '\\"')
-  return executeBd('comments add', { args: [id, `"${escapedContent}"`], cwd })
+  return executeBr('comments add', { args: [id, `"${escapedContent}"`], cwd })
 }

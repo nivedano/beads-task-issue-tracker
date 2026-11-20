@@ -13,7 +13,7 @@ vi.mock('~/composables/useProjectStorage', async () => {
   }
 })
 
-vi.mock('~/utils/bd-api', () => ({
+vi.mock('~/utils/br-api', () => ({
   graceList: vi.fn(),
   graceShow: vi.fn(),
   graceCheckChanged: vi.fn(),
@@ -72,7 +72,7 @@ function deferred<T>() {
  */
 async function loadGrace() {
   const { useGrace } = await import('~/composables/useGrace')
-  const api = await import('~/utils/bd-api')
+  const api = await import('~/utils/br-api')
   return {
     grace: useGrace(),
     graceList: vi.mocked(api.graceList),

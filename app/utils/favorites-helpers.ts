@@ -27,7 +27,7 @@ export type FavoritesSortMode = ProjectSortMode
  * the folder picker now reports.
  *
  * A trailing separator is not significant — except at a root, which must never
- * be stripped away: `/` would become `''` (making every bd call run in the
+ * be stripped away: `/` would become `''` (making every br call run in the
  * app's cwd) and `C:\` would become the drive-*relative* `C:`.
  */
 export function normalizePath(p: string): string {

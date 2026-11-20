@@ -1,12 +1,12 @@
-import { bdReady, unwrapBrEnvelope } from '../../utils/bd-executor'
-import { transformIssue } from '../../utils/bd-transformers'
-import type { BdRawIssue } from '../../utils/bd-transformers'
+import { brReady, unwrapBrEnvelope } from '../../utils/br-executor'
+import { transformIssue } from '../../utils/br-transformers'
+import type { BrRawIssue } from '../../utils/br-transformers'
 
 export default defineEventHandler(async (event) => {
   const query = getQuery(event)
   const cwd = query.path ? String(query.path) : undefined
 
-  const result = await bdReady(cwd)
+  const result = await brReady(cwd)
 
   if (!result.success) {
     throw createError({
@@ -15,7 +15,7 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const issues = unwrapBrEnvelope<BdRawIssue>(result.data).map(transformIssue)
+  const issues = unwrapBrEnvelope<BrRawIssue>(result.data).map(transformIssue)
 
   return issues
 })

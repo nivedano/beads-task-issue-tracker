@@ -5,7 +5,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '~/components/ui/tooltip'
-import { isTauri } from '~/utils/bd-api'
+import { isTauri } from '~/utils/br-api'
 
 const props = defineProps<{
   projectName?: string

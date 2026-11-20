@@ -1,5 +1,5 @@
-import { bdCreate } from '../../utils/bd-executor'
-import { transformIssue, priorityToNumber } from '../../utils/bd-transformers'
+import { brCreate } from '../../utils/br-executor'
+import { transformIssue, priorityToNumber } from '../../utils/br-transformers'
 
 export default defineEventHandler(async (event) => {
   const body = await readBody(event)
@@ -17,7 +17,7 @@ export default defineEventHandler(async (event) => {
   // Convert priority from "p3" format to "3" for br CLI
   const priority = body.priority ? priorityToNumber(body.priority) : undefined
 
-  const result = await bdCreate(
+  const result = await brCreate(
     body.title,
     {
       description: body.description,

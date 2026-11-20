@@ -1,4 +1,4 @@
-import { getExternalUrl, getProbeProjectName, logFrontend, startWatching, stopWatching } from '~/utils/bd-api'
+import { getExternalUrl, getProbeProjectName, logFrontend, startWatching, stopWatching } from '~/utils/br-api'
 import { usePipelineDiagnostics } from './usePipelineDiagnostics'
 
 interface UseChangeDetectionOptions {

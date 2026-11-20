@@ -6,7 +6,7 @@ import {
   DialogTitle,
 } from '~/components/ui/dialog'
 import { Button } from '~/components/ui/button'
-import { readLogs, clearLogs, getLogPath } from '~/utils/bd-api'
+import { readLogs, clearLogs, getLogPath } from '~/utils/br-api'
 
 const open = defineModel<boolean>('open', { default: false })
 

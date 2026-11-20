@@ -2,7 +2,7 @@
 import type { Issue, IssueStatus, UpdateIssuePayload } from '~/types/issue'
 import type { GraceChangeSummary, GraceSortField } from '~/types/grace'
 import { isIssueBlocked } from '~/utils/issue-helpers'
-import { probeProjectCapabilities } from '~/utils/bd-api'
+import { probeProjectCapabilities } from '~/utils/br-api'
 import { resolveExplorerTab, type GraceFilters } from '~/utils/grace-helpers'
 import { useGrace } from '~/composables/useGrace'
 import {
@@ -443,7 +443,7 @@ const { showErrorDialog: showSyncErrorDialog, lastSyncError, closeErrorDialog: c
 // 5. Batched poll command (1 IPC call instead of 3 when changes detected)
 // 6. Adaptive intervals (30s safety net when watcher active, 5s/1s fallback without watcher)
 const isSyncing = ref(false)
-let skipMtimeCheck = false // Set by watcher/fast check to avoid redundant bdCheckChanged in pollFn
+let skipMtimeCheck = false // Set by watcher/fast check to avoid redundant brCheckChanged in pollFn
 const { recordPollStart, recordPollFinish, recordMtimeCheck } = usePipelineDiagnostics()
 
 const pollForChanges = async () => {
@@ -472,7 +472,7 @@ const pollForChanges = async () => {
       if (skipMtimeCheck) {
         beadsChanged = true
       } else {
-        beadsChanged = await bdCheckChanged(apiPath)
+        beadsChanged = await brCheckChanged(apiPath)
         recordMtimeCheck(beadsChanged)
       }
       skipMtimeCheck = false
@@ -489,7 +489,7 @@ const pollForChanges = async () => {
 
       // Snapshot mtime AFTER all operations (including epic show calls in fetchPollData)
       // so the next check ignores changes caused by our own poll cycle
-      await bdCheckChanged(apiPath)
+      await brCheckChanged(apiPath)
 
       // Tell change detection backend to ignore self-triggered events
       notifySelfWrite()
@@ -534,7 +534,7 @@ const checkMtimeChanged = async (): Promise<boolean> => {
   let beadsChanged = false
 
   if (caps.value.hasBeads) {
-    const changed = await bdCheckChanged(path && path !== '.' ? path : undefined)
+    const changed = await brCheckChanged(path && path !== '.' ? path : undefined)
     recordMtimeCheck(changed)
     if (changed) skipMtimeCheck = true // pollFn can skip the mtime check — we already consumed it
     beadsChanged = changed
@@ -776,7 +776,7 @@ return
   try {
     if (caps.value.hasBeads) {
       // Reset the cached mtime so the new project gets a fresh poll
-      await bdResetMtime()
+      await brResetMtime()
 
       if (thisGeneration !== pathChangeGeneration) {
 return

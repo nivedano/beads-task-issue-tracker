@@ -53,7 +53,7 @@ All steps mandatory. Work is NOT complete until `git push` succeeds.
 
 ### Logging
 - **Never use `console.log`** — always use the native logger so logs end up in the app log file.
-- **Frontend (TypeScript)**: `logFrontend('info', '[context] message')` — import from `~/utils/bd-api`. Calls the Rust `log_frontend` Tauri command which writes via `log::info!("[frontend] ...")`.
+- **Frontend (TypeScript)**: `logFrontend('info', '[context] message')` — import from `~/utils/br-api`. Calls the Rust `log_frontend` Tauri command which writes via `log::info!("[frontend] ...")`.
 - **Backend (Rust)**: `log_info!("[context] message")`, `log_error!(...)` macros — write directly to the native log.
 - Levels: `'info'`, `'warn'`, `'error'`
 - **Log file**: `~/Library/Logs/com.beads.manager/beads.log` — readable via `tail -f` or in the app.

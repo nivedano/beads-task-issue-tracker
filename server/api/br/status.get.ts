@@ -1,10 +1,10 @@
-import { bdStatus } from '../../utils/bd-executor'
+import { brStatus } from '../../utils/br-executor'
 
 export default defineEventHandler(async (event) => {
   const query = getQuery(event)
   const cwd = query.path ? String(query.path) : undefined
 
-  const result = await bdStatus(cwd)
+  const result = await brStatus(cwd)
 
   if (!result.success) {
     throw createError({

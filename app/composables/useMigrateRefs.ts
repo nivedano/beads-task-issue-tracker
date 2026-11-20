@@ -1,4 +1,4 @@
-import { bdCheckRefsMigration, bdMigrateRefs } from '~/utils/bd-api'
+import { brCheckRefsMigration, brMigrateRefs } from '~/utils/br-api'
 
 // Shared state (module-level so it persists across component re-renders)
 const needsMigration = ref(false)
@@ -14,7 +14,7 @@ export function useMigrateRefs() {
   const checkProject = async (projectPath?: string): Promise<boolean | 'just_migrated'> => {
     const path = projectPath || beadsPath.value
     try {
-      const status = await bdCheckRefsMigration(path)
+      const status = await brCheckRefsMigration(path)
       if (status.justMigrated) {
         return 'just_migrated'
       }
@@ -37,7 +37,7 @@ export function useMigrateRefs() {
     migrateError.value = null
 
     try {
-      const result = await bdMigrateRefs(path)
+      const result = await brMigrateRefs(path)
 
       if (result.success) {
         needsMigration.value = false

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { GraceChangeDetail } from '~/types/grace'
-import { graceReadFile, graceOpenFile } from '~/utils/bd-api'
+import { graceReadFile, graceOpenFile } from '~/utils/br-api'
 import { graceLocation, toGraceRelative } from '~/utils/grace-helpers'
 import { CopyableId } from '~/components/ui/copyable-id'
 import { Button } from '~/components/ui/button'

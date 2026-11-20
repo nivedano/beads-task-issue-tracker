@@ -1,5 +1,5 @@
 import type { Issue, CreateIssuePayload, UpdateIssuePayload } from '~/types/issue'
-import { bdList, bdCount, bdShow, bdCreate, bdUpdate, bdClose, bdDelete, bdAddComment, bdAddDependency, bdRemoveDependency, bdAddRelation, bdRemoveRelation, bdPurgeOrphanAttachments, bdPollData, bdSearch, bdLabelAdd, bdLabelRemove, type BdListOptions, type PollData } from '~/utils/bd-api'
+import { brList, brCount, brShow, brCreate, brUpdate, brClose, brDelete, brAddComment, brAddDependency, brRemoveDependency, brAddRelation, brRemoveRelation, brPurgeOrphanAttachments, brPollData, brSearch, brLabelAdd, brLabelRemove, type BrListOptions, type PollData } from '~/utils/br-api'
 import { useProjectStorage } from '~/composables/useProjectStorage'
 import {
   deduplicateIssues,
@@ -126,7 +126,7 @@ export function useIssues() {
       // Single call with --all to get all issues
       const path = getPath()
 
-      const allIssues = await bdList({ path, includeAll: true })
+      const allIssues = await brList({ path, includeAll: true })
       const newIssues = deduplicateIssues(allIssues || [])
 
       // Build parent-child relationships from the data we already have.
@@ -192,7 +192,7 @@ export function useIssues() {
 
       // Sync selectedIssue with updated data (e.g., if modified externally via CLI)
       // Check even if list signature unchanged — selectedIssue may be stale from a
-      // previous bdShow while the list was already updated by an earlier poll
+      // previous brShow while the list was already updated by an earlier poll
       if (selectedIssue.value) {
         const updatedSelected = newIssues.find(i => i.id === selectedIssue.value!.id)
         if (!updatedSelected) {
@@ -232,7 +232,7 @@ export function useIssues() {
     error.value = null
     try {
       const path = getPath()
-      const data = await bdPollData(path)
+      const data = await brPollData(path)
 
       const mergedIssues = [...(data.openIssues || []), ...(data.closedIssues || [])]
       const newIssues = deduplicateIssues(mergedIssues)
@@ -266,7 +266,7 @@ export function useIssues() {
       }
 
       // Preserve blockedBy/blocks from previous enrichments (fetchIssues or fetchIssue)
-      // Poll data doesn't return these, but they were populated by earlier bdShow calls.
+      // Poll data doesn't return these, but they were populated by earlier brShow calls.
       const existingMap = new Map(issues.value.map(i => [i.id, i]))
       for (const issue of newIssues) {
         const existing = existingMap.get(issue.id)
@@ -317,7 +317,7 @@ export function useIssues() {
       }
 
       // Sync selectedIssue with updated data (check even if list signature unchanged,
-      // because selectedIssue may be stale from a previous bdShow while the list was
+      // because selectedIssue may be stale from a previous brShow while the list was
       // already updated by an earlier poll before the issue was selected)
       if (selectedIssue.value) {
         const updatedSelected = newIssues.find(i => i.id === selectedIssue.value!.id)
@@ -349,7 +349,7 @@ export function useIssues() {
   // Check if there are changes without fetching full list
   const checkForChanges = async (): Promise<boolean> => {
     try {
-      const data = await bdCount(getPath())
+      const data = await brCount(getPath())
 
       const hasChanges =
         data.count !== lastKnownCount.value ||
@@ -417,7 +417,7 @@ export function useIssues() {
     error.value = null
 
     try {
-      const data = await bdShow(id, getPath())
+      const data = await brShow(id, getPath())
 
       if (data === null) {
         selectedIssue.value = null
@@ -465,7 +465,7 @@ export function useIssues() {
     error.value = null
 
     try {
-      const data = await bdCreate(payload, getPath())
+      const data = await brCreate(payload, getPath())
       if (data?.id) markAsNewlyAdded(data.id)
       await fetchIssues()
       return data
@@ -483,7 +483,7 @@ export function useIssues() {
     error.value = null
 
     try {
-      const data = await bdUpdate(id, payload, getPath())
+      const data = await brUpdate(id, payload, getPath())
 
       // Update local list directly with API response (no need to refetch)
       if (data) {
@@ -517,17 +517,17 @@ export function useIssues() {
         .filter(i => i.blockedBy?.includes(id))
         .map(i => i.id)
 
-      const result = await bdClose(id, getPath())
+      const result = await brClose(id, getPath())
       await fetchIssues()
       if (selectedIssue.value?.id === id) {
         await fetchIssue(id)
       }
 
       // Re-fetch dependent issues so their blockedBy is refreshed (#7)
-      // Use bdShow directly to avoid overwriting selectedIssue
+      // Use brShow directly to avoid overwriting selectedIssue
       const path = getPath()
       for (const depId of dependentIds) {
-        const fresh = await bdShow(depId, path)
+        const fresh = await brShow(depId, path)
         if (fresh) {
           const idx = issues.value.findIndex(i => i.id === depId)
           const existing = idx !== -1 ? issues.value[idx] : undefined
@@ -562,7 +562,7 @@ export function useIssues() {
     error.value = null
 
     try {
-      await bdDelete(id, getPath())
+      await brDelete(id, getPath())
 
       // Remove from local list
       const index = issues.value.findIndex(i => i.id === id)
@@ -577,7 +577,7 @@ export function useIssues() {
       }
 
       // Purge orphan attachments (silently, no need to wait or handle errors)
-      bdPurgeOrphanAttachments(getPath()).catch(() => {
+      brPurgeOrphanAttachments(getPath()).catch(() => {
         // Silently ignore purge errors - it's a cleanup operation
       })
 
@@ -600,7 +600,7 @@ export function useIssues() {
     error.value = null
 
     try {
-      await bdAddComment(id, content, getPath())
+      await brAddComment(id, content, getPath())
 
       // Refetch the issue to get updated comments
       if (selectedIssue.value?.id === id) {
@@ -624,7 +624,7 @@ export function useIssues() {
     error.value = null
 
     try {
-      await bdAddDependency(issueId, blockerId, getPath())
+      await brAddDependency(issueId, blockerId, getPath())
 
       // Refetch the issue to get updated dependencies
       if (selectedIssue.value?.id === issueId) {
@@ -648,7 +648,7 @@ export function useIssues() {
     error.value = null
 
     try {
-      await bdRemoveDependency(issueId, blockerId, getPath())
+      await brRemoveDependency(issueId, blockerId, getPath())
 
       // Refetch the issue to get updated dependencies
       if (selectedIssue.value?.id === issueId) {
@@ -672,7 +672,7 @@ export function useIssues() {
     error.value = null
 
     try {
-      await bdAddRelation(issueId, targetId, relationType, getPath())
+      await brAddRelation(issueId, targetId, relationType, getPath())
 
       // Refetch the issue to get updated relations
       if (selectedIssue.value?.id === issueId) {
@@ -696,7 +696,7 @@ export function useIssues() {
     error.value = null
 
     try {
-      await bdRemoveRelation(sourceId, targetId, getPath())
+      await brRemoveRelation(sourceId, targetId, getPath())
 
       // Refetch the selected issue to get updated relations
       // (sourceId may be the selected issue or the target, depending on direction)
@@ -729,7 +729,7 @@ export function useIssues() {
   const searchIssues = async (query: string) => {
     error.value = null
     try {
-      const results = await bdSearch(query, getPath())
+      const results = await brSearch(query, getPath())
       issues.value = deduplicateIssues(results || [])
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Search failed'
@@ -741,7 +741,7 @@ export function useIssues() {
     isUpdating.value = true
     error.value = null
     try {
-      await bdLabelAdd(id, label, getPath())
+      await brLabelAdd(id, label, getPath())
       // Refresh the issue to reflect the change
       await fetchIssue(id)
       return true
@@ -758,7 +758,7 @@ export function useIssues() {
     isUpdating.value = true
     error.value = null
     try {
-      await bdLabelRemove(id, label, getPath())
+      await brLabelRemove(id, label, getPath())
       // Refresh the issue to reflect the change
       await fetchIssue(id)
       return true

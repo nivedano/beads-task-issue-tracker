@@ -14,7 +14,7 @@ export interface ChildIssue {
   title: string
   status: IssueStatus
   priority: IssuePriority
-  /** Populated only when the backend supplies dependency info; absent from bd/br parent-child payloads today. */
+  /** Populated only when the backend supplies dependency info; absent from br parent-child payloads today. */
   blockedBy?: string[]
 }
 
@@ -23,7 +23,7 @@ export interface ParentIssue {
   title: string
   status: IssueStatus
   priority: IssuePriority
-  /** Populated only when the backend supplies dependency info; absent from bd/br parent-child payloads today. */
+  /** Populated only when the backend supplies dependency info; absent from br parent-child payloads today. */
   blockedBy?: string[]
 }
 

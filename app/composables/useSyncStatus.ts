@@ -1,4 +1,4 @@
-import { bdSync } from '~/utils/bd-api'
+import { brSync } from '~/utils/br-api'
 
 // Shared state across all components
 const lastSyncError = ref<string | null>(null)
@@ -30,7 +30,7 @@ export function useSyncStatus() {
     syncMessage.value = null
 
     try {
-      await bdSync(beadsPath.value || undefined)
+      await brSync(beadsPath.value || undefined)
       lastSyncSuccess.value = true
       showSuccessMessage()
     } catch (e) {

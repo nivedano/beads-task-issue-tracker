@@ -34,7 +34,7 @@ static PROBE_CHILD: LazyLock<Mutex<Option<std::process::Child>>> =
 // Per-project mutex to serialize CLI invocations.
 // The CLI store is a single-writer SQLite database; concurrent invocations against
 // the same project can fail or corrupt it. This serializes all CLI calls per project.
-static BD_PROJECT_LOCKS: LazyLock<Mutex<HashMap<String, std::sync::Arc<Mutex<()>>>>> =
+static PROJECT_LOCKS: LazyLock<Mutex<HashMap<String, std::sync::Arc<Mutex<()>>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
 // Conditional logging macros
@@ -108,7 +108,7 @@ struct GitHubRelease {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct BdCliUpdateInfo {
+pub struct BrCliUpdateInfo {
     #[serde(rename = "currentVersion")]
     pub current_version: String,
     #[serde(rename = "latestVersion")]
@@ -283,7 +283,7 @@ struct BeadsChangedPayload {
 /// Dependency relationship as returned by br CLI
 /// Format: {"issue_id": "...", "depends_on_id": "...", "type": "blocks", "created_at": "...", "created_by": "..."}
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct BdRawDependency {
+pub struct BrRawDependency {
     pub id: Option<String>,
     pub issue_id: Option<String>,
     pub depends_on_id: Option<String>,
@@ -296,7 +296,7 @@ pub struct BdRawDependency {
 /// Dependent info (for parent-child relationships with full issue info)
 /// Some CLI versions may return this format instead
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct BdRawDependent {
+pub struct BrRawDependent {
     pub id: Option<String>,
     pub title: Option<String>,
     pub status: Option<String>,
@@ -306,7 +306,7 @@ pub struct BdRawDependent {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct BdRawIssue {
+pub struct BrRawIssue {
     pub id: String,
     pub title: String,
     pub description: Option<String>,
@@ -323,15 +323,15 @@ pub struct BdRawIssue {
     pub close_reason: Option<String>,
     pub blocked_by: Option<Vec<String>>,
     pub blocks: Option<Vec<String>>,
-    pub comments: Option<Vec<BdRawComment>>,
+    pub comments: Option<Vec<BrRawComment>>,
     pub external_ref: Option<String>,
     pub estimate: Option<i32>,
     pub design: Option<String>,
     pub acceptance_criteria: Option<String>,
     pub notes: Option<String>,
     pub parent: Option<String>,
-    pub dependents: Option<Vec<BdRawDependent>>,
-    pub dependencies: Option<Vec<BdRawDependency>>,
+    pub dependents: Option<Vec<BrRawDependent>>,
+    pub dependencies: Option<Vec<BrRawDependency>>,
     pub dependency_count: Option<i32>,
     pub dependent_count: Option<i32>,
     pub metadata: Option<String>,
@@ -340,7 +340,7 @@ pub struct BdRawIssue {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct BdRawComment {
+pub struct BrRawComment {
     pub id: serde_json::Value,
     pub issue_id: Option<String>,
     pub author: String,
@@ -581,7 +581,7 @@ fn normalize_issue_status(status: &str) -> String {
     }
 }
 
-fn transform_issue(raw: BdRawIssue) -> Issue {
+fn transform_issue(raw: BrRawIssue) -> Issue {
     // Parent info - dependencies array now contains relationship info, not full issue details
     // For now, we just use the parent ID if available
     let parent = raw.parent.as_ref().map(|parent_id| {
@@ -763,9 +763,9 @@ fn transform_issue(raw: BdRawIssue) -> Issue {
 
 /// Parse issues with tolerance for malformed entries
 /// Returns all successfully parsed issues and logs failures
-fn parse_issues_tolerant(output: &str, context: &str) -> Result<Vec<BdRawIssue>, String> {
+fn parse_issues_tolerant(output: &str, context: &str) -> Result<Vec<BrRawIssue>, String> {
     // First try strict parsing
-    if let Ok(issues) = serde_json::from_str::<Vec<BdRawIssue>>(output) {
+    if let Ok(issues) = serde_json::from_str::<Vec<BrRawIssue>>(output) {
         return Ok(issues);
     }
 
@@ -803,7 +803,7 @@ fn parse_issues_tolerant(output: &str, context: &str) -> Result<Vec<BdRawIssue>,
 
     for (i, obj) in arr.iter().enumerate() {
         let obj_str = serde_json::to_string(obj).unwrap_or_default();
-        match serde_json::from_str::<BdRawIssue>(&obj_str) {
+        match serde_json::from_str::<BrRawIssue>(&obj_str) {
             Ok(issue) => issues.push(issue),
             Err(e) => {
                 failed_count += 1;
@@ -948,7 +948,7 @@ fn normalize_cli_binary(configured: &str) -> String {
 
 /// Parse a version string into (major, minor, patch).
 /// Works for `br 0.1.13 (rustc 1.85.0-nightly)`.
-fn parse_bd_version(version_str: &str) -> Option<(u32, u32, u32)> {
+fn parse_version(version_str: &str) -> Option<(u32, u32, u32)> {
     // Look for a semver-like pattern: digits.digits.digits
     let re_like = version_str
         .split_whitespace()
@@ -968,7 +968,7 @@ fn parse_bd_version(version_str: &str) -> Option<(u32, u32, u32)> {
     }
 }
 
-fn execute_bd(command: &str, args: &[String], cwd: Option<&str>) -> Result<String, String> {
+fn execute_br(command: &str, args: &[String], cwd: Option<&str>) -> Result<String, String> {
     let working_dir = cwd
         .map(String::from)
         .or_else(|| env::var("BEADS_PATH").ok())
@@ -986,11 +986,11 @@ fn execute_bd(command: &str, args: &[String], cwd: Option<&str>) -> Result<Strin
     full_args.push("--json");
 
     let binary = get_cli_binary();
-    log_info!("[bd] {} {} | cwd: {}", binary, full_args.join(" "), working_dir);
+    log_info!("[br] {} {} | cwd: {}", binary, full_args.join(" "), working_dir);
 
     // Acquire the per-project lock: the CLI store is single-writer.
     let project_lock = {
-        let mut locks = BD_PROJECT_LOCKS.lock().unwrap();
+        let mut locks = PROJECT_LOCKS.lock().unwrap();
         locks.entry(working_dir.clone())
             .or_insert_with(|| std::sync::Arc::new(Mutex::new(())))
             .clone()
@@ -1004,17 +1004,17 @@ fn execute_bd(command: &str, args: &[String], cwd: Option<&str>) -> Result<Strin
         .env("BEADS_PATH", &working_dir)
         .output()
         .map_err(|e| {
-            log_error!("[bd] Failed to execute {}: {}", binary, e);
+            log_error!("[br] Failed to execute {}: {}", binary, e);
             format!("Failed to execute {}: {}", binary, e)
         })?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        log_error!("[bd] Command failed | status: {} | stderr: {}", output.status, stderr);
+        log_error!("[br] Command failed | status: {} | stderr: {}", output.status, stderr);
 
         // Detect schema incompatibility so the frontend can offer a repair.
         if stderr.contains("no such column: spec_id") {
-            log_error!("[bd] Schema migration failure detected - database needs repair");
+            log_error!("[br] Schema migration failure detected - database needs repair");
             return Err("SCHEMA_MIGRATION_ERROR: Database schema is incompatible. Please use the repair function to fix this issue.".to_string());
         }
 
@@ -1025,12 +1025,12 @@ fn execute_bd(command: &str, args: &[String], cwd: Option<&str>) -> Result<Strin
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    log_info!("[bd] OK | {} bytes", stdout.len());
+    log_info!("[br] OK | {} bytes", stdout.len());
 
     // Log output preview only if verbose mode is enabled
     if VERBOSE_LOGGING.load(Ordering::Relaxed) {
         let preview: String = stdout.chars().take(500).collect();
-        log_debug!("[bd] Output: {}", preview);
+        log_debug!("[br] Output: {}", preview);
     }
 
     Ok(stdout)
@@ -1212,7 +1212,7 @@ fn ensure_refs_migrated_v3(beads_dir: &std::path::Path, working_dir: &str) {
 /// Sync the beads database before read operations to ensure data is up-to-date
 /// Uses bidirectional sync to preserve local changes while getting remote updates
 /// Has a cooldown to avoid redundant syncs within the same poll cycle
-fn sync_bd_database(cwd: Option<&str>) {
+fn sync_br_database(cwd: Option<&str>) {
     let working_dir = cwd
         .map(String::from)
         .or_else(|| env::var("BEADS_PATH").ok())
@@ -1272,7 +1272,7 @@ fn sync_bd_database(cwd: Option<&str>) {
 // ============================================================================
 
 #[tauri::command]
-async fn bd_sync(cwd: Option<String>) -> Result<(), String> {
+async fn br_sync(cwd: Option<String>) -> Result<(), String> {
     let working_dir = cwd
         .or_else(|| env::var("BEADS_PATH").ok())
         .unwrap_or_else(|| {
@@ -1282,7 +1282,7 @@ async fn bd_sync(cwd: Option<String>) -> Result<(), String> {
         });
 
     let binary = get_cli_binary();
-    log_info!("[bd_sync] Manual sync requested for: {}", working_dir);
+    log_info!("[br_sync] Manual sync requested for: {}", working_dir);
 
     let output = new_command(&binary)
         .arg("sync")
@@ -1294,11 +1294,11 @@ async fn bd_sync(cwd: Option<String>) -> Result<(), String> {
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        log_error!("[bd_sync] Sync failed: {}", stderr.trim());
+        log_error!("[br_sync] Sync failed: {}", stderr.trim());
         return Err(format!("Sync failed: {}", stderr.trim()));
     }
 
-    log_info!("[bd_sync] Sync completed successfully");
+    log_info!("[br_sync] Sync completed successfully");
     // Reset cooldown so subsequent reads pick up the fresh sync
     let mut last = LAST_SYNC_TIME.lock().unwrap();
     *last = Some(Instant::now());
@@ -1313,7 +1313,7 @@ struct RepairResult {
 }
 
 #[tauri::command]
-async fn bd_repair_database(cwd: Option<String>) -> Result<RepairResult, String> {
+async fn br_repair_database(cwd: Option<String>) -> Result<RepairResult, String> {
     let working_dir = cwd
         .or_else(|| env::var("BEADS_PATH").ok())
         .unwrap_or_else(|| {
@@ -1322,7 +1322,7 @@ async fn bd_repair_database(cwd: Option<String>) -> Result<RepairResult, String>
                 .unwrap_or_else(|_| ".".to_string())
         });
 
-    log_info!("[bd_repair] Starting database repair for: {}", working_dir);
+    log_info!("[br_repair] Starting database repair for: {}", working_dir);
 
     let beads_dir = std::path::Path::new(&working_dir).join(".beads");
 
@@ -1354,20 +1354,20 @@ async fn bd_repair_database(cwd: Option<String>) -> Result<RepairResult, String>
     if !jsonl_path.exists() || jsonl_size == 0 {
         return Err("Cannot repair: issues.jsonl is missing or empty. Your data would be lost.".to_string());
     }
-    log_info!("[bd_repair] Using JSONL-based repair strategy");
+    log_info!("[br_repair] Using JSONL-based repair strategy");
 
     // Create backup of current database
     if let Err(e) = std::fs::copy(&db_path, &backup_path) {
-        log_error!("[bd_repair] Failed to create backup: {}", e);
+        log_error!("[br_repair] Failed to create backup: {}", e);
         return Err(format!("Failed to create backup: {}", e));
     }
-    log_info!("[bd_repair] Backup created at: {:?}", backup_path);
+    log_info!("[br_repair] Backup created at: {:?}", backup_path);
 
     // Remove database files
     std::fs::remove_file(&db_path).ok();
     std::fs::remove_file(beads_dir.join("beads.db-shm")).ok();
     std::fs::remove_file(beads_dir.join("beads.db-wal")).ok();
-    log_info!("[bd_repair] Removed old database files");
+    log_info!("[br_repair] Removed old database files");
 
     // Verify the CLI can now work (it recreates the database from JSONL).
     // br 0.7.6 may rebuild the database and still crash (stack overflow) on that
@@ -1386,7 +1386,7 @@ async fn bd_repair_database(cwd: Option<String>) -> Result<RepairResult, String>
     for attempt in 1..=2 {
         match probe() {
             Ok(output) if output.status.success() => {
-                log_info!("[bd_repair] Repair successful - database recreated (probe attempt {})", attempt);
+                log_info!("[br_repair] Repair successful - database recreated (probe attempt {})", attempt);
                 return Ok(RepairResult {
                     success: true,
                     message: "Database repaired successfully. Your issues have been restored from the backup file.".to_string(),
@@ -1400,16 +1400,16 @@ async fn bd_repair_database(cwd: Option<String>) -> Result<RepairResult, String>
                 } else {
                     stderr
                 };
-                log_warn!("[bd_repair] Probe attempt {} failed: {}", attempt, last_error);
+                log_warn!("[br_repair] Probe attempt {} failed: {}", attempt, last_error);
             }
             Err(e) => {
                 last_error = e.to_string();
-                log_warn!("[bd_repair] Probe attempt {} failed: {}", attempt, last_error);
+                log_warn!("[br_repair] Probe attempt {} failed: {}", attempt, last_error);
             }
         }
     }
 
-    log_error!("[bd_repair] Repair verification failed: {}", last_error);
+    log_error!("[br_repair] Repair verification failed: {}", last_error);
     Err(format!("Repair failed during verification: {}", last_error))
 }
 
@@ -1429,30 +1429,30 @@ pub struct PollData {
 }
 
 /// Batched poll: sync once, then fetch all issues + ready in 2 commands (was 3).
-/// Replaces 3 separate IPC calls (bd_list + bd_list(closed) + bd_ready) with one.
+/// Replaces 3 separate IPC calls (br_list + br_list(closed) + br_ready) with one.
 #[tauri::command]
-async fn bd_poll_data(cwd: Option<String>) -> Result<PollData, String> {
-    log_info!("[bd_poll_data] Batched poll starting");
+async fn br_poll_data(cwd: Option<String>) -> Result<PollData, String> {
+    log_info!("[br_poll_data] Batched poll starting");
 
     let cwd_ref = cwd.as_deref();
 
     // Single sync for the entire poll cycle
-    sync_bd_database(cwd_ref);
+    sync_br_database(cwd_ref);
 
     // Fetch issues with a single --all call (br supports --all)
-    let all_output = execute_bd("list", &["--all".to_string(), "--limit=0".to_string()], cwd_ref)?;
-    let raw_all = parse_issues_tolerant(&all_output, "bd_poll_data_all")?;
+    let all_output = execute_br("list", &["--all".to_string(), "--limit=0".to_string()], cwd_ref)?;
+    let raw_all = parse_issues_tolerant(&all_output, "br_poll_data_all")?;
     let (raw_open, raw_closed): (Vec<_>, Vec<_>) = raw_all.into_iter()
-        .partition(|issue: &BdRawIssue| issue.status != "closed");
+        .partition(|issue: &BrRawIssue| issue.status != "closed");
 
     // Fetch ready issues
-    let ready_output = execute_bd("ready", &[], cwd_ref)?;
-    let raw_ready = parse_issues_tolerant(&ready_output, "bd_poll_data_ready")?;
+    let ready_output = execute_br("ready", &[], cwd_ref)?;
+    let raw_ready = parse_issues_tolerant(&ready_output, "br_poll_data_ready")?;
 
-    log_info!("[bd_poll_data] Batched poll done: {} open, {} closed, {} ready",
+    log_info!("[br_poll_data] Batched poll done: {} open, {} closed, {} ready",
         raw_open.len(), raw_closed.len(), raw_ready.len());
 
-    // Update mtime AFTER our commands ran, so the next bd_check_changed
+    // Update mtime AFTER our commands ran, so the next br_check_changed
     // only detects EXTERNAL changes (not our own poll's side effects)
     {
         let working_dir = cwd_ref
@@ -1495,7 +1495,7 @@ fn get_beads_mtime(beads_dir: &std::path::Path) -> Option<std::time::SystemTime>
 /// Returns true if changes detected or if this is the first check.
 /// This is extremely cheap — just a few stat() calls, no CLI process spawns.
 #[tauri::command]
-async fn bd_check_changed(cwd: Option<String>) -> Result<bool, String> {
+async fn br_check_changed(cwd: Option<String>) -> Result<bool, String> {
     let working_dir = cwd
         .or_else(|| env::var("BEADS_PATH").ok())
         .unwrap_or_else(|| {
@@ -1513,11 +1513,11 @@ async fn bd_check_changed(cwd: Option<String>) -> Result<bool, String> {
     match (current_mtime, previous) {
         (Some(current), Some(prev)) => {
             if current != prev {
-                log_info!("[bd_check_changed] mtime changed — data may have been modified");
+                log_info!("[br_check_changed] mtime changed — data may have been modified");
                 map.insert(working_dir, current);
                 Ok(true)
             } else {
-                log_debug!("[bd_check_changed] mtime unchanged — no changes");
+                log_debug!("[br_check_changed] mtime unchanged — no changes");
                 Ok(false)
             }
         }
@@ -1528,7 +1528,7 @@ async fn bd_check_changed(cwd: Option<String>) -> Result<bool, String> {
         }
         (None, _) => {
             // No database file found
-            log_warn!("[bd_check_changed] No beads database found in {}", working_dir);
+            log_warn!("[br_check_changed] No beads database found in {}", working_dir);
             Ok(true) // Report changed to let caller handle missing db
         }
     }
@@ -1537,24 +1537,24 @@ async fn bd_check_changed(cwd: Option<String>) -> Result<bool, String> {
 /// Reset the cached mtime for a specific project (or all projects).
 /// Called from the frontend when switching projects to force a fresh poll.
 #[tauri::command]
-async fn bd_reset_mtime(cwd: Option<String>) -> Result<(), String> {
+async fn br_reset_mtime(cwd: Option<String>) -> Result<(), String> {
     let mut map = LAST_KNOWN_MTIME.lock().unwrap();
     if let Some(path) = cwd {
-        log_info!("[bd_reset_mtime] Resetting mtime for: {}", path);
+        log_info!("[br_reset_mtime] Resetting mtime for: {}", path);
         map.remove(&path);
     } else {
-        log_info!("[bd_reset_mtime] Resetting all cached mtimes");
+        log_info!("[br_reset_mtime] Resetting all cached mtimes");
         map.clear();
     }
     Ok(())
 }
 
 #[tauri::command]
-async fn bd_list(options: ListOptions) -> Result<Vec<Issue>, String> {
-    log_info!("[bd_list] cwd: {:?}", options.cwd);
+async fn br_list(options: ListOptions) -> Result<Vec<Issue>, String> {
+    log_info!("[br_list] cwd: {:?}", options.cwd);
 
     // Sync database before reading to ensure data is up-to-date
-    sync_bd_database(options.cwd.as_deref());
+    sync_br_database(options.cwd.as_deref());
 
     let mut args: Vec<String> = Vec::new();
 
@@ -1586,22 +1586,22 @@ async fn bd_list(options: ListOptions) -> Result<Vec<Issue>, String> {
     // Always disable limit to get all issues (the CLI defaults to 50)
     args.push("--limit=0".to_string());
 
-    let output = execute_bd("list", &args, options.cwd.as_deref())?;
+    let output = execute_br("list", &args, options.cwd.as_deref())?;
 
-    let raw_issues = parse_issues_tolerant(&output, "bd_list")?;
+    let raw_issues = parse_issues_tolerant(&output, "br_list")?;
 
-    log_info!("[bd_list] Found {} issues", raw_issues.len());
+    log_info!("[br_list] Found {} issues", raw_issues.len());
     Ok(raw_issues.into_iter().map(transform_issue).collect())
 }
 
 #[tauri::command]
-async fn bd_count(options: CwdOptions) -> Result<CountResult, String> {
+async fn br_count(options: CwdOptions) -> Result<CountResult, String> {
     // Sync database before reading to ensure data is up-to-date
-    sync_bd_database(options.cwd.as_deref());
+    sync_br_database(options.cwd.as_deref());
 
     // Fetch all issues in a single --all call
-    let all_output = execute_bd("list", &["--all".to_string(), "--limit=0".to_string()], options.cwd.as_deref())?;
-    let raw_issues = parse_issues_tolerant(&all_output, "bd_count_all")?;
+    let all_output = execute_br("list", &["--all".to_string(), "--limit=0".to_string()], options.cwd.as_deref())?;
+    let raw_issues = parse_issues_tolerant(&all_output, "br_count_all")?;
 
     let mut by_type: HashMap<String, usize> = HashMap::new();
     by_type.insert("bug".to_string(), 0);
@@ -1644,42 +1644,42 @@ async fn bd_count(options: CwdOptions) -> Result<CountResult, String> {
 }
 
 #[tauri::command]
-async fn bd_ready(options: CwdOptions) -> Result<Vec<Issue>, String> {
-    log_info!("[bd_ready] Called with cwd: {:?}", options.cwd);
+async fn br_ready(options: CwdOptions) -> Result<Vec<Issue>, String> {
+    log_info!("[br_ready] Called with cwd: {:?}", options.cwd);
 
     // Sync database before reading to ensure data is up-to-date
-    sync_bd_database(options.cwd.as_deref());
+    sync_br_database(options.cwd.as_deref());
 
-    let output = execute_bd("ready", &[], options.cwd.as_deref())?;
+    let output = execute_br("ready", &[], options.cwd.as_deref())?;
 
-    let raw_issues = parse_issues_tolerant(&output, "bd_ready")?;
+    let raw_issues = parse_issues_tolerant(&output, "br_ready")?;
 
-    log_info!("[bd_ready] Found {} ready issues", raw_issues.len());
+    log_info!("[br_ready] Found {} ready issues", raw_issues.len());
     Ok(raw_issues.into_iter().map(transform_issue).collect())
 }
 
 #[tauri::command]
-async fn bd_status(options: CwdOptions) -> Result<serde_json::Value, String> {
-    let output = execute_bd("status", &[], options.cwd.as_deref())?;
+async fn br_status(options: CwdOptions) -> Result<serde_json::Value, String> {
+    let output = execute_br("status", &[], options.cwd.as_deref())?;
 
     serde_json::from_str(&output)
         .map_err(|e| format!("Failed to parse status: {}", e))
 }
 
 #[tauri::command]
-async fn bd_show(id: String, options: CwdOptions) -> Result<Option<Issue>, String> {
-    log_info!("[bd_show] Called for issue: {} with cwd: {:?}", id, options.cwd);
+async fn br_show(id: String, options: CwdOptions) -> Result<Option<Issue>, String> {
+    log_info!("[br_show] Called for issue: {} with cwd: {:?}", id, options.cwd);
 
     // Sync database before reading to ensure data is up-to-date
-    sync_bd_database(options.cwd.as_deref());
+    sync_br_database(options.cwd.as_deref());
 
-    let output = match execute_bd("show", std::slice::from_ref(&id), options.cwd.as_deref()) {
+    let output = match execute_br("show", std::slice::from_ref(&id), options.cwd.as_deref()) {
         Ok(output) => output,
         Err(e) => {
             // Handle "not found" errors gracefully (future CLI versions may use non-zero exit)
             let err_lower = e.to_lowercase();
             if err_lower.contains("no issue found") || err_lower.contains("not found") {
-                log_info!("[bd_show] Issue {} not found (error from CLI): {}", id, e);
+                log_info!("[br_show] Issue {} not found (error from CLI): {}", id, e);
                 return Ok(None);
             }
             return Err(e);
@@ -1689,18 +1689,18 @@ async fn bd_show(id: String, options: CwdOptions) -> Result<Option<Issue>, Strin
     // Handle empty output (current CLI behavior for missing issues: exit 0, empty stdout)
     let trimmed = output.trim();
     if trimmed.is_empty() {
-        log_info!("[bd_show] Issue {} not found (empty output from CLI)", id);
+        log_info!("[br_show] Issue {} not found (empty output from CLI)", id);
         return Ok(None);
     }
 
     // show can return either a single object or an array
     let result: serde_json::Value = serde_json::from_str(trimmed)
         .map_err(|e| {
-            log_error!("[bd_show] Failed to parse JSON for {}: {}", id, e);
+            log_error!("[br_show] Failed to parse JSON for {}: {}", id, e);
             format!("Failed to parse issue: {}", e)
         })?;
 
-    let raw_issue: Option<BdRawIssue> = if result.is_array() {
+    let raw_issue: Option<BrRawIssue> = if result.is_array() {
         result.as_array()
             .and_then(|arr| arr.first())
             .and_then(|v| serde_json::from_value(v.clone()).ok())
@@ -1708,13 +1708,13 @@ async fn bd_show(id: String, options: CwdOptions) -> Result<Option<Issue>, Strin
         serde_json::from_value(result).ok()
     };
 
-    log_info!("[bd_show] Issue {} found: {}", id, raw_issue.is_some());
+    log_info!("[br_show] Issue {} found: {}", id, raw_issue.is_some());
     Ok(raw_issue.map(transform_issue))
 }
 
 #[tauri::command]
-async fn bd_create(payload: CreatePayload) -> Result<Option<Issue>, String> {
-    log_info!("[bd_create] Creating issue: {:?}", payload.title);
+async fn br_create(payload: CreatePayload) -> Result<Option<Issue>, String> {
+    log_info!("[br_create] Creating issue: {:?}", payload.title);
     let mut args: Vec<String> = vec![payload.title.clone()];
 
     if let Some(ref desc) = payload.description {
@@ -1772,19 +1772,19 @@ async fn bd_create(payload: CreatePayload) -> Result<Option<Issue>, String> {
         }
     }
 
-    let output = execute_bd("create", &args, payload.cwd.as_deref())?;
+    let output = execute_br("create", &args, payload.cwd.as_deref())?;
 
-    let raw_issue: BdRawIssue = serde_json::from_str(&output)
+    let raw_issue: BrRawIssue = serde_json::from_str(&output)
         .map_err(|e| format!("Failed to parse created issue: {}", e))?;
 
     Ok(Some(transform_issue(raw_issue)))
 }
 
 #[tauri::command]
-async fn bd_update(id: String, updates: UpdatePayload) -> Result<Option<Issue>, String> {
+async fn br_update(id: String, updates: UpdatePayload) -> Result<Option<Issue>, String> {
     // Always log update calls for debugging (regardless of LOGGING_ENABLED)
-    log::info!("[bd_update] Updating issue: {} with cwd: {:?}", id, updates.cwd);
-    log::info!("[bd_update] Updates: status={:?}, title={:?}, type={:?}", updates.status, updates.title, updates.issue_type);
+    log::info!("[br_update] Updating issue: {} with cwd: {:?}", id, updates.cwd);
+    log::info!("[br_update] Updates: status={:?}, title={:?}, type={:?}", updates.status, updates.title, updates.issue_type);
 
     let mut args: Vec<String> = vec![id.clone()];
 
@@ -1849,24 +1849,24 @@ async fn bd_update(id: String, updates: UpdatePayload) -> Result<Option<Issue>, 
         args.push(parent.clone());
     }
 
-    log::info!("[bd_update] Executing: br update {}", args.join(" "));
-    let output = execute_bd("update", &args, updates.cwd.as_deref())?;
+    log::info!("[br_update] Executing: br update {}", args.join(" "));
+    let output = execute_br("update", &args, updates.cwd.as_deref())?;
 
-    log::info!("[bd_update] Raw output: {}", output.chars().take(500).collect::<String>());
+    log::info!("[br_update] Raw output: {}", output.chars().take(500).collect::<String>());
 
     // Handle empty output from the CLI (some updates return empty response)
     let trimmed_output = output.trim();
     if trimmed_output.is_empty() {
-        log::info!("[bd_update] Empty response from CLI, fetching issue {} to get updated data", id);
+        log::info!("[br_update] Empty response from CLI, fetching issue {} to get updated data", id);
         // Fetch the updated issue directly
-        let show_output = execute_bd("show", std::slice::from_ref(&id), updates.cwd.as_deref())?;
+        let show_output = execute_br("show", std::slice::from_ref(&id), updates.cwd.as_deref())?;
         let show_result: serde_json::Value = serde_json::from_str(&show_output)
             .map_err(|e| {
-                log::error!("[bd_update] Failed to parse show JSON: {}", e);
+                log::error!("[br_update] Failed to parse show JSON: {}", e);
                 format!("Failed to fetch updated issue: {}", e)
             })?;
 
-        let raw_issue: Option<BdRawIssue> = if show_result.is_array() {
+        let raw_issue: Option<BrRawIssue> = if show_result.is_array() {
             show_result.as_array()
                 .and_then(|arr| arr.first())
                 .and_then(|v| serde_json::from_value(v.clone()).ok())
@@ -1880,69 +1880,69 @@ async fn bd_update(id: String, updates: UpdatePayload) -> Result<Option<Issue>, 
     // update can return either a single object or an array
     let result: serde_json::Value = serde_json::from_str(trimmed_output)
         .map_err(|e| {
-            log::error!("[bd_update] Failed to parse JSON: {}", e);
+            log::error!("[br_update] Failed to parse JSON: {}", e);
             format!("Failed to parse updated issue: {}", e)
         })?;
 
-    let raw_issue: Option<BdRawIssue> = if result.is_array() {
-        log::info!("[bd_update] Result is array");
+    let raw_issue: Option<BrRawIssue> = if result.is_array() {
+        log::info!("[br_update] Result is array");
         result.as_array()
             .and_then(|arr| arr.first())
             .and_then(|v| serde_json::from_value(v.clone()).ok())
     } else {
-        log::info!("[bd_update] Result is object");
+        log::info!("[br_update] Result is object");
         serde_json::from_value(result.clone()).map_err(|e| {
-            log::error!("[bd_update] Failed to parse issue from result: {}", e);
+            log::error!("[br_update] Failed to parse issue from result: {}", e);
             e
         }).ok()
     };
 
     if let Some(ref issue) = raw_issue {
-        log::info!("[bd_update] Updated issue {} - new status: {}", id, issue.status);
+        log::info!("[br_update] Updated issue {} - new status: {}", id, issue.status);
     } else {
-        log::warn!("[bd_update] Could not parse updated issue from response");
+        log::warn!("[br_update] Could not parse updated issue from response");
     }
 
     Ok(raw_issue.map(transform_issue))
 }
 
 #[tauri::command]
-async fn bd_close(id: String, options: CwdOptions) -> Result<serde_json::Value, String> {
-    log_info!("[bd_close] Closing issue: {} with cwd: {:?}", id, options.cwd);
+async fn br_close(id: String, options: CwdOptions) -> Result<serde_json::Value, String> {
+    log_info!("[br_close] Closing issue: {} with cwd: {:?}", id, options.cwd);
 
     let args = vec![id.clone(), "--suggest-next".to_string()];
 
-    let output = execute_bd("close", &args, options.cwd.as_deref())?;
+    let output = execute_br("close", &args, options.cwd.as_deref())?;
 
-    log_info!("[bd_close] Raw output: {}", output.chars().take(500).collect::<String>());
+    log_info!("[br_close] Raw output: {}", output.chars().take(500).collect::<String>());
 
     let result: serde_json::Value = serde_json::from_str(&output)
         .map_err(|e| {
-            log_error!("[bd_close] Failed to parse JSON: {}", e);
+            log_error!("[br_close] Failed to parse JSON: {}", e);
             format!("Failed to parse close result: {}", e)
         })?;
 
-    log_info!("[bd_close] Issue {} closed successfully", id);
+    log_info!("[br_close] Issue {} closed successfully", id);
     Ok(result)
 }
 
 #[tauri::command]
-async fn bd_search(query: String, options: CwdOptions) -> Result<Vec<Issue>, String> {
-    log_info!("[bd_search] Searching for: {} with cwd: {:?}", query, options.cwd);
+async fn br_search(query: String, options: CwdOptions) -> Result<Vec<Issue>, String> {
+    log_info!("[br_search] Searching for: {} with cwd: {:?}", query, options.cwd);
 
     let args = vec![query];
-    let output = execute_bd("search", &args, options.cwd.as_deref())?;
+    let output = execute_br("search", &args, options.cwd.as_deref())?;
 
-    log_info!("[bd_search] Raw output: {}", output.chars().take(500).collect::<String>());
+    log_info!("[br_search] Raw output: {}", output.chars().take(500).collect::<String>());
 
     let trimmed = output.trim();
     if trimmed.is_empty() || trimmed == "[]" {
         return Ok(vec![]);
     }
 
-    let raw: Vec<BdRawIssue> = serde_json::from_str(trimmed)
+    let raw: Vec<BrRawIssue> = serde_json::from_str(trimmed)
         .map_err(|e| {
-            log_error!("[bd_search] Failed to parse JSON: {}", e);
+            log_error!("[br_search] Failed to parse JSON: {}", e);
             format!("Failed to parse search results: {}", e)
         })?;
 
@@ -1950,29 +1950,29 @@ async fn bd_search(query: String, options: CwdOptions) -> Result<Vec<Issue>, Str
 }
 
 #[tauri::command]
-async fn bd_label_add(id: String, label: String, options: CwdOptions) -> Result<(), String> {
-    log_info!("[bd_label_add] Adding label '{}' to issue {}", label, id);
+async fn br_label_add(id: String, label: String, options: CwdOptions) -> Result<(), String> {
+    log_info!("[br_label_add] Adding label '{}' to issue {}", label, id);
     let args = vec![id, label];
-    execute_bd("label add", &args, options.cwd.as_deref())?;
+    execute_br("label add", &args, options.cwd.as_deref())?;
     Ok(())
 }
 
 #[tauri::command]
-async fn bd_label_remove(id: String, label: String, options: CwdOptions) -> Result<(), String> {
-    log_info!("[bd_label_remove] Removing label '{}' from issue {}", label, id);
+async fn br_label_remove(id: String, label: String, options: CwdOptions) -> Result<(), String> {
+    log_info!("[br_label_remove] Removing label '{}' from issue {}", label, id);
     let args = vec![id, label];
-    execute_bd("label remove", &args, options.cwd.as_deref())?;
+    execute_br("label remove", &args, options.cwd.as_deref())?;
     Ok(())
 }
 
 #[tauri::command]
-async fn bd_delete(id: String, options: CwdOptions) -> Result<serde_json::Value, String> {
+async fn br_delete(id: String, options: CwdOptions) -> Result<serde_json::Value, String> {
     let args = vec![id.clone(), "--force".to_string()];
-    log::info!("[bd_delete] Deleting issue: {} with args: {:?}", id, args);
-    execute_bd("delete", &args, options.cwd.as_deref())?;
+    log::info!("[br_delete] Deleting issue: {} with args: {:?}", id, args);
+    execute_br("delete", &args, options.cwd.as_deref())?;
 
     // Sync after delete to push deletion to remote and prevent resurrection
-    sync_bd_database(options.cwd.as_deref());
+    sync_br_database(options.cwd.as_deref());
 
     // Clean up attachments folder for this issue
     let project_path = options.cwd.as_deref().unwrap_or(".");
@@ -1992,9 +1992,9 @@ async fn bd_delete(id: String, options: CwdOptions) -> Result<serde_json::Value,
             let att_dir = abs_path.join(".beads").join("attachments").join(issue_short_id(&id));
             if att_dir.exists() && att_dir.is_dir() {
                 if let Err(e) = fs::remove_dir_all(&att_dir) {
-                    log::warn!("[bd_delete] Failed to remove attachments folder: {}", e);
+                    log::warn!("[br_delete] Failed to remove attachments folder: {}", e);
                 } else {
-                    log::info!("[bd_delete] Removed attachments folder: {:?}", att_dir);
+                    log::info!("[br_delete] Removed attachments folder: {:?}", att_dir);
                 }
             }
         }
@@ -2004,52 +2004,52 @@ async fn bd_delete(id: String, options: CwdOptions) -> Result<serde_json::Value,
 }
 
 #[tauri::command]
-async fn bd_comments_add(id: String, content: String, options: CwdOptions) -> Result<serde_json::Value, String> {
+async fn br_comments_add(id: String, content: String, options: CwdOptions) -> Result<serde_json::Value, String> {
     let args = vec![id, content];
 
-    execute_bd("comments add", &args, options.cwd.as_deref())?;
+    execute_br("comments add", &args, options.cwd.as_deref())?;
 
     Ok(serde_json::json!({ "success": true }))
 }
 
 #[tauri::command]
-async fn bd_dep_add(issue_id: String, blocker_id: String, options: CwdOptions) -> Result<serde_json::Value, String> {
+async fn br_dep_add(issue_id: String, blocker_id: String, options: CwdOptions) -> Result<serde_json::Value, String> {
     let args = vec![issue_id, blocker_id];
 
-    execute_bd("dep add", &args, options.cwd.as_deref())?;
+    execute_br("dep add", &args, options.cwd.as_deref())?;
 
     Ok(serde_json::json!({ "success": true }))
 }
 
 #[tauri::command]
-async fn bd_dep_remove(issue_id: String, blocker_id: String, options: CwdOptions) -> Result<serde_json::Value, String> {
+async fn br_dep_remove(issue_id: String, blocker_id: String, options: CwdOptions) -> Result<serde_json::Value, String> {
     let args = vec![issue_id, blocker_id];
 
-    execute_bd("dep remove", &args, options.cwd.as_deref())?;
+    execute_br("dep remove", &args, options.cwd.as_deref())?;
 
     Ok(serde_json::json!({ "success": true }))
 }
 
 #[tauri::command]
-async fn bd_dep_add_relation(id1: String, id2: String, relation_type: String, options: CwdOptions) -> Result<serde_json::Value, String> {
+async fn br_dep_add_relation(id1: String, id2: String, relation_type: String, options: CwdOptions) -> Result<serde_json::Value, String> {
     let args = vec![id1, id2, "--type".to_string(), relation_type];
 
-    execute_bd("dep add", &args, options.cwd.as_deref())?;
+    execute_br("dep add", &args, options.cwd.as_deref())?;
 
     Ok(serde_json::json!({ "success": true }))
 }
 
 #[tauri::command]
-async fn bd_dep_remove_relation(id1: String, id2: String, options: CwdOptions) -> Result<serde_json::Value, String> {
+async fn br_dep_remove_relation(id1: String, id2: String, options: CwdOptions) -> Result<serde_json::Value, String> {
     let args = vec![id1, id2];
 
-    execute_bd("dep remove", &args, options.cwd.as_deref())?;
+    execute_br("dep remove", &args, options.cwd.as_deref())?;
 
     Ok(serde_json::json!({ "success": true }))
 }
 
 #[tauri::command]
-async fn bd_available_relation_types() -> Vec<serde_json::Value> {
+async fn br_available_relation_types() -> Vec<serde_json::Value> {
     let types: Vec<(&str, &str)> = vec![
         ("relates-to", "Relates To"),
         ("related", "Related"),
@@ -2453,15 +2453,15 @@ async fn check_for_updates_demo() -> Result<UpdateInfo, String> {
 }
 
 #[tauri::command]
-async fn check_bd_cli_update() -> Result<BdCliUpdateInfo, String> {
+async fn check_br_cli_update() -> Result<BrCliUpdateInfo, String> {
     // Get current br version
-    let version_str = get_bd_version().await;
+    let version_str = get_br_version().await;
     if version_str.contains("not found") {
         return Err("br CLI not found".to_string());
     }
 
     // Parse semver from version string
-    let current_tuple = parse_bd_version(&version_str)
+    let current_tuple = parse_version(&version_str)
         .ok_or_else(|| format!("Could not parse version from: {}", version_str))?;
     let current_version = format!("{}.{}.{}", current_tuple.0, current_tuple.1, current_tuple.2);
 
@@ -2487,7 +2487,7 @@ async fn check_bd_cli_update() -> Result<BdCliUpdateInfo, String> {
     let latest_version = release.tag_name.trim_start_matches('v').to_string();
     let has_update = compare_versions(&current_version, &latest_version);
 
-    Ok(BdCliUpdateInfo {
+    Ok(BrCliUpdateInfo {
         current_version,
         latest_version,
         has_update,
@@ -2711,7 +2711,7 @@ async fn log_frontend(level: String, message: String) {
 }
 
 #[tauri::command]
-async fn get_bd_version() -> String {
+async fn get_br_version() -> String {
     let binary = get_cli_binary();
     match new_command(&binary)
         .arg("--version")
@@ -2875,7 +2875,7 @@ fn base64_encode(data: &[u8]) -> String {
 async fn purge_orphan_attachments(project_path: String) -> Result<PurgeResult, String> {
     log::info!("[purge_orphan_attachments] project: {}", project_path);
 
-    // Calculate absolute project path (reusing pattern from bd_delete)
+    // Calculate absolute project path (reusing pattern from br_delete)
     let abs_project_path = if project_path == "." || project_path.is_empty() {
         env::current_dir().map_err(|e| format!("Failed to get current directory: {}", e))?
     } else {
@@ -2907,7 +2907,7 @@ async fn purge_orphan_attachments(project_path: String) -> Result<PurgeResult, S
 
     // Get list of all existing issue IDs via br list --all
     let existing_ids: std::collections::HashSet<String> = {
-        let output = execute_bd("list", &["--all".to_string(), "--limit=0".to_string()], Some(&abs_project_path.to_string_lossy()))?;
+        let output = execute_br("list", &["--all".to_string(), "--limit=0".to_string()], Some(&abs_project_path.to_string_lossy()))?;
         let issues = parse_issues_tolerant(&output, "purge_orphan_attachments")?;
         issues.into_iter().map(|i| i.id).collect()
     };
@@ -3200,7 +3200,7 @@ async fn check_refs_migration(cwd: Option<String>) -> Result<RefsMigrationStatus
 
 /// Perform the attachment refs migration v3 (filesystem-only).
 /// Delegates to ensure_refs_migrated_v3 which handles backup, cleanup, dedup, and marker.
-/// The br sync is NOT called here — it will happen naturally after via sync_bd_database.
+/// The br sync is NOT called here — it will happen naturally after via sync_br_database.
 #[tauri::command]
 async fn migrate_attachment_refs(cwd: Option<String>) -> Result<MigrateRefsResult, String> {
     let working_dir = cwd
@@ -3950,17 +3950,17 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            bd_sync,
-            bd_repair_database,
-            bd_check_changed,
-            bd_reset_mtime,
-            bd_poll_data,
-            bd_list,
-            bd_count,
-            bd_ready,
-            bd_status,
-            bd_show,
-            bd_create,
+            br_sync,
+            br_repair_database,
+            br_check_changed,
+            br_reset_mtime,
+            br_poll_data,
+            br_list,
+            br_count,
+            br_ready,
+            br_status,
+            br_show,
+            br_create,
             get_logging_enabled,
             set_logging_enabled,
             get_verbose_logging,
@@ -3970,25 +3970,25 @@ pub fn run() {
             read_logs,
             get_log_path_string,
             log_frontend,
-            get_bd_version,
-            bd_update,
-            bd_close,
-            bd_search,
-            bd_label_add,
-            bd_label_remove,
-            bd_delete,
-            bd_comments_add,
-            bd_dep_add,
-            bd_dep_remove,
-            bd_dep_add_relation,
-            bd_dep_remove_relation,
-            bd_available_relation_types,
+            get_br_version,
+            br_update,
+            br_close,
+            br_search,
+            br_label_add,
+            br_label_remove,
+            br_delete,
+            br_comments_add,
+            br_dep_add,
+            br_dep_remove,
+            br_dep_add_relation,
+            br_dep_remove_relation,
+            br_available_relation_types,
             fs_exists,
             fs_list,
             fs_roots,
             check_for_updates,
             check_for_updates_demo,
-            check_bd_cli_update,
+            check_br_cli_update,
             download_and_install_update,
             open_image_file,
             read_image_file,

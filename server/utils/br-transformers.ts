@@ -1,7 +1,7 @@
 import type { Issue, IssueType, IssueStatus, IssuePriority } from '~/types/issue'
 
 // Raw issue format from br CLI
-export interface BdRawIssue {
+export interface BrRawIssue {
   id: string
   title: string
   description?: string
@@ -75,7 +75,7 @@ export function normalizeIssueStatus(status: string): IssueStatus {
 /**
  * Transform raw br CLI issue to Issue type interface
  */
-export function transformIssue(raw: BdRawIssue): Issue {
+export function transformIssue(raw: BrRawIssue): Issue {
   // Compute blockedBy from dependencies (mirroring Tauri/Rust logic)
   const blockedBy = [...(raw.blocked_by || [])]
   if (raw.dependencies) {
@@ -85,7 +85,7 @@ export function transformIssue(raw: BdRawIssue): Issue {
       if (depType === 'blocks' && dep.id && !blockedBy.includes(dep.id)) {
         blockedBy.push(dep.id)
       }
-      // bd list format: { issue_id, depends_on_id, type: "blocks" }
+      // br list format: { issue_id, depends_on_id, type: "blocks" }
       if (depType === 'blocks' && dep.depends_on_id && !blockedBy.includes(dep.depends_on_id)) {
         blockedBy.push(dep.depends_on_id)
       }

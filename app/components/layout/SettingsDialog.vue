@@ -8,7 +8,7 @@ import {
 } from '~/components/ui/dialog'
 import { Label } from '~/components/ui/label'
 import { Button } from '~/components/ui/button'
-import { checkExternalHealth } from '~/utils/bd-api'
+import { checkExternalHealth } from '~/utils/br-api'
 import type { ThemeDefinition } from '~/composables/useTheme'
 
 const open = defineModel<boolean>('open', { default: false })

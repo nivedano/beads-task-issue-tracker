@@ -11,7 +11,7 @@ import ConfirmDialog from '~/components/ui/confirm-dialog/ConfirmDialog.vue'
 import FolderPicker from './FolderPicker.vue'
 import Sortable from 'sortablejs'
 import { getFolderName } from '~/utils/path'
-import { bdList, listProbeProjects, registerOrExposeProject, patchProbeProject, probeUnregisterProject, getExternalUrl, probeProjectCapabilities } from '~/utils/bd-api'
+import { brList, listProbeProjects, registerOrExposeProject, patchProbeProject, probeUnregisterProject, getExternalUrl, probeProjectCapabilities } from '~/utils/br-api'
 import type { ProbeProject } from '~/utils/probe-adapter'
 import { useKeyboardNavigation } from '~/composables/useKeyboardNavigation'
 import { deduplicateIssues } from '~/utils/issue-helpers'
@@ -62,7 +62,7 @@ async function scanProjectIssueCounts(path: string) {
       return
     }
 
-    const projectIssues = deduplicateIssues(await bdList({ path, includeAll: true }))
+    const projectIssues = deduplicateIssues(await brList({ path, includeAll: true }))
     projectIssueCounts.value[path] = {
       active: projectIssues.filter(issue => issue.status === 'open' || issue.status === 'in_progress').length,
       total: projectIssues.length,

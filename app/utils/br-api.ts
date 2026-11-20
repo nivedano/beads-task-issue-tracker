@@ -268,11 +268,11 @@ export interface RepairResult {
 }
 
 // Repair database (for schema migration issues)
-export async function bdRepairDatabase(path?: string): Promise<RepairResult> {
+export async function brRepairDatabase(path?: string): Promise<RepairResult> {
   if (!isTauri()) {
     throw new Error('Database repair is only available in the desktop app')
   }
-  return invoke<RepairResult>('bd_repair_database', { cwd: path })
+  return invoke<RepairResult>('br_repair_database', { cwd: path })
 }
 
 // Attachment refs migration v3 (filesystem-only)
@@ -287,14 +287,14 @@ export interface MigrateRefsResult {
   refsUpdated: number
 }
 
-export async function bdCheckRefsMigration(path?: string): Promise<RefsMigrationStatus> {
+export async function brCheckRefsMigration(path?: string): Promise<RefsMigrationStatus> {
   if (!isTauri()) {
     return { needsMigration: false, refCount: 0, justMigrated: false }
   }
   return invoke<RefsMigrationStatus>('check_refs_migration', { cwd: path })
 }
 
-export async function bdMigrateRefs(path?: string): Promise<MigrateRefsResult> {
+export async function brMigrateRefs(path?: string): Promise<MigrateRefsResult> {
   if (!isTauri()) {
     throw new Error('Attachment migration is only available in the desktop app')
   }
@@ -307,12 +307,12 @@ export async function bdMigrateRefs(path?: string): Promise<MigrateRefsResult> {
 
 /**
  * Check if the beads database has changed since last check (filesystem mtime).
- * Extremely cheap — just 1-2 stat() calls, no bd process spawns.
+ * Extremely cheap — just 1-2 stat() calls, no br process spawns.
  * Returns true if changes detected or first check.
  */
-export async function bdCheckChanged(path?: string): Promise<boolean> {
+export async function brCheckChanged(path?: string): Promise<boolean> {
   if (isTauri()) {
-    return invoke<boolean>('bd_check_changed', { cwd: path })
+    return invoke<boolean>('br_check_changed', { cwd: path })
   }
   // Web fallback: always report changed (can't check filesystem)
   return true
@@ -322,15 +322,15 @@ export async function bdCheckChanged(path?: string): Promise<boolean> {
  * Reset the cached mtime for a specific project (or all projects).
  * Called when switching projects to force a fresh poll on next cycle.
  */
-export async function bdResetMtime(path?: string): Promise<void> {
+export async function brResetMtime(path?: string): Promise<void> {
   if (isTauri()) {
-    return invoke<void>('bd_reset_mtime', { cwd: path })
+    return invoke<void>('br_reset_mtime', { cwd: path })
   }
 }
 
 /**
  * Batched poll: fetches open + closed + ready issues in a single IPC call.
- * Syncs once, then runs 3 bd commands sequentially on the backend.
+ * Syncs once, then runs 3 br commands sequentially on the backend.
  * Replaces 3 separate IPC calls for lower overhead.
  */
 export interface PollData {
@@ -339,16 +339,16 @@ export interface PollData {
   readyIssues: Issue[]
 }
 
-export async function bdPollData(path?: string): Promise<PollData> {
+export async function brPollData(path?: string): Promise<PollData> {
   if (isTauri()) {
-    return invoke<PollData>('bd_poll_data', { cwd: path })
+    return invoke<PollData>('br_poll_data', { cwd: path })
   }
 
   // Web fallback: make separate calls
   const [openIssues, closedIssues, readyIssues] = await Promise.all([
-    bdList({ path }),
-    bdList({ path, status: ['closed'] }),
-    bdReady(path),
+    brList({ path }),
+    brList({ path, status: ['closed'] }),
+    brReady(path),
   ])
   return { openIssues, closedIssues, readyIssues }
 }
@@ -357,7 +357,7 @@ export async function bdPollData(path?: string): Promise<PollData> {
 // BD API Functions - Use Tauri invoke in app, fetch in web
 // ============================================================================
 
-export interface BdListOptions {
+export interface BrListOptions {
   status?: string[]
   type?: string[]
   priority?: string[]
@@ -366,9 +366,9 @@ export interface BdListOptions {
   path?: string
 }
 
-export async function bdList(options: BdListOptions = {}): Promise<Issue[]> {
+export async function brList(options: BrListOptions = {}): Promise<Issue[]> {
   if (isTauri()) {
-    return invoke<Issue[]>('bd_list', {
+    return invoke<Issue[]>('br_list', {
       options: {
         status: options.status,
         type: options.type,
@@ -390,174 +390,174 @@ export async function bdList(options: BdListOptions = {}): Promise<Issue[]> {
   if (options.assignee) params.set('assignee', options.assignee)
 
   const queryString = params.toString()
-  const url = queryString ? `/api/bd/list?${queryString}` : '/api/bd/list'
+  const url = queryString ? `/api/br/list?${queryString}` : '/api/br/list'
   return $fetch<Issue[]>(url)
 }
 
-export interface BdCountResult {
+export interface BrCountResult {
   count: number
   byType: Record<string, number>
   byPriority: Record<string, number>
   lastUpdated: string | null
 }
 
-export async function bdCount(path?: string): Promise<BdCountResult> {
+export async function brCount(path?: string): Promise<BrCountResult> {
   if (isTauri()) {
-    return invoke<BdCountResult>('bd_count', { options: { cwd: path } })
+    return invoke<BrCountResult>('br_count', { options: { cwd: path } })
   }
 
-  const url = path && path !== '.' ? `/api/bd/count?path=${encodeURIComponent(path)}` : '/api/bd/count'
-  return $fetch<BdCountResult>(url)
+  const url = path && path !== '.' ? `/api/br/count?path=${encodeURIComponent(path)}` : '/api/br/count'
+  return $fetch<BrCountResult>(url)
 }
 
-export async function bdReady(path?: string): Promise<Issue[]> {
+export async function brReady(path?: string): Promise<Issue[]> {
   if (isTauri()) {
-    return invoke<Issue[]>('bd_ready', { options: { cwd: path } })
+    return invoke<Issue[]>('br_ready', { options: { cwd: path } })
   }
 
-  const url = path && path !== '.' ? `/api/bd/ready?path=${encodeURIComponent(path)}` : '/api/bd/ready'
+  const url = path && path !== '.' ? `/api/br/ready?path=${encodeURIComponent(path)}` : '/api/br/ready'
   return $fetch<Issue[]>(url)
 }
 
-export async function bdStatus(path?: string): Promise<unknown> {
+export async function brStatus(path?: string): Promise<unknown> {
   if (isTauri()) {
-    return invoke('bd_status', { options: { cwd: path } })
+    return invoke('br_status', { options: { cwd: path } })
   }
 
-  const url = path && path !== '.' ? `/api/bd/status?path=${encodeURIComponent(path)}` : '/api/bd/status'
+  const url = path && path !== '.' ? `/api/br/status?path=${encodeURIComponent(path)}` : '/api/br/status'
   return $fetch(url)
 }
 
-export async function bdShow(id: string, path?: string): Promise<Issue | null> {
+export async function brShow(id: string, path?: string): Promise<Issue | null> {
   if (isTauri()) {
-    return invoke<Issue | null>('bd_show', { id, options: { cwd: path } })
+    return invoke<Issue | null>('br_show', { id, options: { cwd: path } })
   }
 
-  const url = path && path !== '.' ? `/api/bd/show/${id}?path=${encodeURIComponent(path)}` : `/api/bd/show/${id}`
+  const url = path && path !== '.' ? `/api/br/show/${id}?path=${encodeURIComponent(path)}` : `/api/br/show/${id}`
   return $fetch<Issue>(url)
 }
 
-export async function bdCreate(payload: CreateIssuePayload, path?: string): Promise<Issue | null> {
+export async function brCreate(payload: CreateIssuePayload, path?: string): Promise<Issue | null> {
   if (isTauri()) {
-    return invoke<Issue | null>('bd_create', {
+    return invoke<Issue | null>('br_create', {
       payload: { ...payload, cwd: path },
     })
   }
 
-  const url = path && path !== '.' ? `/api/bd/create?path=${encodeURIComponent(path)}` : '/api/bd/create'
+  const url = path && path !== '.' ? `/api/br/create?path=${encodeURIComponent(path)}` : '/api/br/create'
   return $fetch<Issue>(url, {
     method: 'POST',
     body: payload,
   })
 }
 
-export async function bdUpdate(id: string, payload: UpdateIssuePayload, path?: string): Promise<Issue | null> {
+export async function brUpdate(id: string, payload: UpdateIssuePayload, path?: string): Promise<Issue | null> {
   if (isTauri()) {
-    return invoke<Issue | null>('bd_update', {
+    return invoke<Issue | null>('br_update', {
       id,
       updates: { ...payload, cwd: path },
     })
   }
 
-  const url = path && path !== '.' ? `/api/bd/update/${id}?path=${encodeURIComponent(path)}` : `/api/bd/update/${id}`
+  const url = path && path !== '.' ? `/api/br/update/${id}?path=${encodeURIComponent(path)}` : `/api/br/update/${id}`
   return $fetch<Issue>(url, {
     method: 'PATCH',
     body: payload,
   })
 }
 
-export async function bdSearch(query: string, path?: string): Promise<Issue[]> {
+export async function brSearch(query: string, path?: string): Promise<Issue[]> {
   if (isTauri()) {
-    return invoke<Issue[]>('bd_search', { query, options: { cwd: path } })
+    return invoke<Issue[]>('br_search', { query, options: { cwd: path } })
   }
   // Web: no search support — client-side filtering handles it
   return []
 }
 
-export async function bdLabelAdd(id: string, label: string, path?: string): Promise<void> {
+export async function brLabelAdd(id: string, label: string, path?: string): Promise<void> {
   if (isTauri()) {
-    return invoke<void>('bd_label_add', { id, label, options: { cwd: path } })
+    return invoke<void>('br_label_add', { id, label, options: { cwd: path } })
   }
   throw new Error('Label operations are only available in the desktop app')
 }
 
-export async function bdLabelRemove(id: string, label: string, path?: string): Promise<void> {
+export async function brLabelRemove(id: string, label: string, path?: string): Promise<void> {
   if (isTauri()) {
-    return invoke<void>('bd_label_remove', { id, label, options: { cwd: path } })
+    return invoke<void>('br_label_remove', { id, label, options: { cwd: path } })
   }
   throw new Error('Label operations are only available in the desktop app')
 }
 
-export async function bdClose(id: string, path?: string): Promise<unknown> {
+export async function brClose(id: string, path?: string): Promise<unknown> {
   if (isTauri()) {
-    return invoke('bd_close', { id, options: { cwd: path } })
+    return invoke('br_close', { id, options: { cwd: path } })
   }
 
-  const url = path && path !== '.' ? `/api/bd/close/${id}?path=${encodeURIComponent(path)}` : `/api/bd/close/${id}`
+  const url = path && path !== '.' ? `/api/br/close/${id}?path=${encodeURIComponent(path)}` : `/api/br/close/${id}`
   return $fetch(url, { method: 'POST' })
 }
 
-export async function bdDelete(id: string, path?: string): Promise<{ success: boolean; id: string }> {
+export async function brDelete(id: string, path?: string): Promise<{ success: boolean; id: string }> {
   if (isTauri()) {
-    return invoke<{ success: boolean; id: string }>('bd_delete', { id, options: { cwd: path } })
+    return invoke<{ success: boolean; id: string }>('br_delete', { id, options: { cwd: path } })
   }
 
-  const url = path && path !== '.' ? `/api/bd/delete/${id}?path=${encodeURIComponent(path)}` : `/api/bd/delete/${id}`
+  const url = path && path !== '.' ? `/api/br/delete/${id}?path=${encodeURIComponent(path)}` : `/api/br/delete/${id}`
   return $fetch<{ success: boolean; id: string }>(url, { method: 'DELETE' })
 }
 
-export async function bdAddComment(id: string, content: string, path?: string): Promise<{ success: boolean }> {
+export async function brAddComment(id: string, content: string, path?: string): Promise<{ success: boolean }> {
   if (isTauri()) {
-    return invoke<{ success: boolean }>('bd_comments_add', { id, content, options: { cwd: path } })
+    return invoke<{ success: boolean }>('br_comments_add', { id, content, options: { cwd: path } })
   }
 
-  const url = path && path !== '.' ? `/api/bd/comments/${id}?path=${encodeURIComponent(path)}` : `/api/bd/comments/${id}`
+  const url = path && path !== '.' ? `/api/br/comments/${id}?path=${encodeURIComponent(path)}` : `/api/br/comments/${id}`
   return $fetch<{ success: boolean }>(url, {
     method: 'POST',
     body: { content },
   })
 }
 
-export async function bdAddDependency(issueId: string, blockerId: string, path?: string): Promise<{ success: boolean }> {
+export async function brAddDependency(issueId: string, blockerId: string, path?: string): Promise<{ success: boolean }> {
   if (isTauri()) {
-    return invoke<{ success: boolean }>('bd_dep_add', { issueId, blockerId, options: { cwd: path } })
+    return invoke<{ success: boolean }>('br_dep_add', { issueId, blockerId, options: { cwd: path } })
   }
 
   throw new Error('Dependency management is only available in the desktop app')
 }
 
-export async function bdRemoveDependency(issueId: string, blockerId: string, path?: string): Promise<{ success: boolean }> {
+export async function brRemoveDependency(issueId: string, blockerId: string, path?: string): Promise<{ success: boolean }> {
   if (isTauri()) {
-    return invoke<{ success: boolean }>('bd_dep_remove', { issueId, blockerId, options: { cwd: path } })
+    return invoke<{ success: boolean }>('br_dep_remove', { issueId, blockerId, options: { cwd: path } })
   }
 
   throw new Error('Dependency management is only available in the desktop app')
 }
 
-export async function bdAvailableRelationTypes(): Promise<Array<{ value: string; label: string }>> {
+export async function brAvailableRelationTypes(): Promise<Array<{ value: string; label: string }>> {
   if (isTauri()) {
-    return invoke<Array<{ value: string; label: string }>>('bd_available_relation_types')
+    return invoke<Array<{ value: string; label: string }>>('br_available_relation_types')
   }
   throw new Error('Only available in the desktop app')
 }
 
-export async function bdAddRelation(id1: string, id2: string, relationType: string, path?: string): Promise<{ success: boolean }> {
+export async function brAddRelation(id1: string, id2: string, relationType: string, path?: string): Promise<{ success: boolean }> {
   if (isTauri()) {
-    return invoke<{ success: boolean }>('bd_dep_add_relation', { id1, id2, relationType, options: { cwd: path } })
+    return invoke<{ success: boolean }>('br_dep_add_relation', { id1, id2, relationType, options: { cwd: path } })
   }
   throw new Error('Relation management is only available in the desktop app')
 }
 
-export async function bdRemoveRelation(id1: string, id2: string, path?: string): Promise<{ success: boolean }> {
+export async function brRemoveRelation(id1: string, id2: string, path?: string): Promise<{ success: boolean }> {
   if (isTauri()) {
-    return invoke<{ success: boolean }>('bd_dep_remove_relation', { id1, id2, options: { cwd: path } })
+    return invoke<{ success: boolean }>('br_dep_remove_relation', { id1, id2, options: { cwd: path } })
   }
   throw new Error('Relation management is only available in the desktop app')
 }
 
-export async function bdSync(path?: string): Promise<void> {
+export async function brSync(path?: string): Promise<void> {
   if (isTauri()) {
-    return invoke<void>('bd_sync', { cwd: path })
+    return invoke<void>('br_sync', { cwd: path })
   }
 
   // Web fallback - no-op (sync not available in web mode)
@@ -568,7 +568,7 @@ export interface PurgeResult {
   deletedFolders: string[]
 }
 
-export async function bdPurgeOrphanAttachments(path?: string): Promise<PurgeResult> {
+export async function brPurgeOrphanAttachments(path?: string): Promise<PurgeResult> {
   if (isTauri()) {
     return invoke<PurgeResult>('purge_orphan_attachments', {
       projectPath: path || '.',
@@ -642,23 +642,23 @@ export async function logFrontend(level: 'error' | 'warn' | 'info', message: str
   }
 }
 
-export async function getBdVersion(): Promise<string> {
+export async function getBrVersion(): Promise<string> {
   if (isTauri()) {
-    return invoke<string>('get_bd_version')
+    return invoke<string>('get_br_version')
   }
   return 'web mode'
 }
 
-export interface BdCliUpdateInfo {
+export interface BrCliUpdateInfo {
   currentVersion: string
   latestVersion: string
   hasUpdate: boolean
   releaseUrl: string
 }
 
-export async function checkBdCliUpdate(): Promise<BdCliUpdateInfo> {
+export async function checkBrCliUpdate(): Promise<BrCliUpdateInfo> {
   if (isTauri()) {
-    return invoke<BdCliUpdateInfo>('check_bd_cli_update')
+    return invoke<BrCliUpdateInfo>('check_br_cli_update')
   }
   return { currentVersion: 'web', latestVersion: 'web', hasUpdate: false, releaseUrl: '' }
 }

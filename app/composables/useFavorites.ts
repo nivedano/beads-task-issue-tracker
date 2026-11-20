@@ -1,4 +1,4 @@
-import { fsExists } from '~/utils/bd-api'
+import { fsExists } from '~/utils/br-api'
 import { getFolderName } from '~/utils/path'
 import { useNotification } from '~/composables/useNotification'
 import { migrateProjectStorageNamespace } from '~/composables/useProjectStorage'

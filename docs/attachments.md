@@ -42,7 +42,7 @@ The **filesystem** is the sole source of truth for attachments. The `external_re
 
 ### Deleting an issue
 
-1. The issue is deleted via `bd delete {id} --force --hard`
+1. The issue is deleted via `br delete {id} --force`
 2. The entire `.beads/attachments/{issue-id}/` folder is deleted
 3. An orphan purge mechanism also cleans up leftover attachment folders
 
@@ -55,7 +55,7 @@ The `external_ref` field is reserved for **real external references only**:
 
 ### UNIQUE Constraint
 
-`bd`/`br` enforce a `UNIQUE` constraint on `external_ref`. When an issue has no external reference, we pass an empty string `""` which is internally converted to `null` — no conflict, no sentinel needed.
+`br` enforces a `UNIQUE` constraint on `external_ref`. When an issue has no external reference, we pass an empty string `""` which is internally converted to `null` — no conflict, no sentinel needed.
 
 ## Allowed File Types
 

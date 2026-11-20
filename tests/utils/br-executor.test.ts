@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { unwrapBrEnvelope } from '../../server/utils/bd-executor'
+import { unwrapBrEnvelope } from '../../server/utils/br-executor'
 
 describe('unwrapBrEnvelope', () => {
   const sampleIssues = [
@@ -7,7 +7,7 @@ describe('unwrapBrEnvelope', () => {
     { id: 'def-456', title: 'Task', status: 'closed', priority: 3, issue_type: 'task' },
   ]
 
-  it('returns flat array as-is (bd / br < 0.1.30)', () => {
+  it('returns flat array as-is (br < 0.1.30)', () => {
     const result = unwrapBrEnvelope(sampleIssues)
     expect(result).toEqual(sampleIssues)
   })

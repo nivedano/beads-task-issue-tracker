@@ -1,4 +1,4 @@
-import { bdRepairDatabase, isSchemaMigrationError, type RepairResult } from '~/utils/bd-api'
+import { brRepairDatabase, isSchemaMigrationError, type RepairResult } from '~/utils/br-api'
 
 // Shared state
 const needsRepair = ref(false)
@@ -29,7 +29,7 @@ export function useRepairDatabase() {
     lastRepairResult.value = null
 
     try {
-      const result = await bdRepairDatabase(path)
+      const result = await brRepairDatabase(path)
       lastRepairResult.value = result
 
       if (result.success) {
@@ -61,7 +61,7 @@ export function useRepairDatabase() {
       repairProgress.value = { current: i + 1, total: projectPaths.length, currentPath: path }
 
       try {
-        const result = await bdRepairDatabase(path)
+        const result = await brRepairDatabase(path)
         if (result.success) {
           results.success++
         } else {

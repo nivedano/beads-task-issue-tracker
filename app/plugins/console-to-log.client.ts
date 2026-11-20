@@ -1,4 +1,4 @@
-import { logFrontend } from '~/utils/bd-api'
+import { logFrontend } from '~/utils/br-api'
 
 export default defineNuxtPlugin(() => {
   if (!import.meta.client) return

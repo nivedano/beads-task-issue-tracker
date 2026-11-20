@@ -1,4 +1,4 @@
-import { bdClose } from '../../../utils/bd-executor'
+import { brDelete } from '../../../utils/br-executor'
 
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')
@@ -12,14 +12,15 @@ export default defineEventHandler(async (event) => {
   }
 
   const cwd = query.path ? String(query.path) : undefined
-  const result = await bdClose(id, cwd)
+
+  const result = await brDelete(id, cwd)
 
   if (!result.success) {
     throw createError({
       statusCode: 500,
-      message: result.error || 'Failed to close issue',
+      message: result.error || 'Failed to delete issue',
     })
   }
 
-  return result.data
+  return { success: true, id }
 })

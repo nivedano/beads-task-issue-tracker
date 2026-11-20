@@ -1,4 +1,4 @@
-import { fsExists } from '~/utils/bd-api'
+import { fsExists } from '~/utils/br-api'
 import { clearProjectStorageCache, migrateProjectStorageNamespace } from '~/composables/useProjectStorage'
 import { normalizePath } from '~/utils/favorites-helpers'
 

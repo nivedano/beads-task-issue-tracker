@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
 import type { Issue, ChildIssue } from '~/types/issue'
-import { bdAvailableRelationTypes } from '~/utils/bd-api'
+import { brAvailableRelationTypes } from '~/utils/br-api'
 
 // Singleton state — shared across all callers
 
@@ -480,7 +480,7 @@ export function useIssueDialogs() {
 
   // Init relation types (called from onMounted)
   const initRelationTypes = () => {
-    bdAvailableRelationTypes().then(types => { availableRelationTypes.value = types }).catch(() => {})
+    brAvailableRelationTypes().then(types => { availableRelationTypes.value = types }).catch(() => {})
   }
 
   return {

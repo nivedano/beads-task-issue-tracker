@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Button } from '~/components/ui/button'
-import { readLogs, clearLogs, exportLogs as exportLogsApi, getLogPath, getBdVersion, getLoggingEnabled, setLoggingEnabled, getVerboseLogging, setVerboseLogging, checkBdCliUpdate, type BdCliUpdateInfo } from '~/utils/bd-api'
+import { readLogs, clearLogs, exportLogs as exportLogsApi, getLogPath, getBrVersion, getLoggingEnabled, setLoggingEnabled, getVerboseLogging, setVerboseLogging, checkBrCliUpdate, type BrCliUpdateInfo } from '~/utils/br-api'
 import { openUrl } from '~/utils/open-url'
 
 const { isSyncing: isForceSyncing, forceSync, syncMessage, lastSyncSuccess } = useSyncStatus()
@@ -16,11 +16,11 @@ const emit = defineEmits<{
 
 const logs = ref('')
 const logPath = ref('')
-const bdVersion = ref('')
+const brVersion = ref('')
 const isAutoRefresh = ref(true)
 const isLoading = ref(false)
 const isVerbose = ref(false)
-const bdCliUpdate = ref<BdCliUpdateInfo | null>(null)
+const brCliUpdate = ref<BrCliUpdateInfo | null>(null)
 let refreshInterval: ReturnType<typeof setInterval> | null = null
 
 const debugTab = ref<'logs' | 'pipeline'>('logs')
@@ -98,14 +98,14 @@ const colorizedLogs = computed(() => {
   escaped = escaped.replace(/\[INFO\]/g, '<span class="text-blue-400">[INFO]</span>')
 
   // Colorize command tags
-  escaped = escaped.replace(/\[bd_list\]/g, '<span class="text-cyan-400">[bd_list]</span>')
-  escaped = escaped.replace(/\[bd_ready\]/g, '<span class="text-cyan-400">[bd_ready]</span>')
-  escaped = escaped.replace(/\[bd_show\]/g, '<span class="text-cyan-400">[bd_show]</span>')
-  escaped = escaped.replace(/\[bd_sync\]/g, '<span class="text-cyan-400">[bd_sync]</span>')
-  escaped = escaped.replace(/\[bd\]/g, '<span class="text-blue-400">[bd]</span>')
+  escaped = escaped.replace(/\[br_list\]/g, '<span class="text-cyan-400">[br_list]</span>')
+  escaped = escaped.replace(/\[br_ready\]/g, '<span class="text-cyan-400">[br_ready]</span>')
+  escaped = escaped.replace(/\[br_show\]/g, '<span class="text-cyan-400">[br_show]</span>')
+  escaped = escaped.replace(/\[br_sync\]/g, '<span class="text-cyan-400">[br_sync]</span>')
+  escaped = escaped.replace(/\[br\]/g, '<span class="text-blue-400">[br]</span>')
   escaped = escaped.replace(/\[sync\]/g, '<span class="text-green-400">[sync]</span>')
-  escaped = escaped.replace(/\[bd_check_changed\]/g, '<span class="text-green-400">[bd_check_changed]</span>')
-  escaped = escaped.replace(/\[bd_poll_data\]/g, '<span class="text-cyan-400">[bd_poll_data]</span>')
+  escaped = escaped.replace(/\[br_check_changed\]/g, '<span class="text-green-400">[br_check_changed]</span>')
+  escaped = escaped.replace(/\[br_poll_data\]/g, '<span class="text-cyan-400">[br_poll_data]</span>')
   escaped = escaped.replace(/\[probe\]/g, '<span class="text-green-400">[probe]</span>')
   escaped = escaped.replace(/\[startup\]/g, '<span class="text-purple-400">[startup]</span>')
   escaped = escaped.replace(/\[debug\]/g, '<span class="text-amber-400">[debug]</span>')
@@ -193,11 +193,11 @@ const close = () => {
 // Also enable backend logging when panel is open (LOGGING_ENABLED flag)
 watch(() => props.isOpen, async (isOpen) => {
   if (isOpen) {
-    bdVersion.value = await getBdVersion()
+    brVersion.value = await getBrVersion()
     logPath.value = await getLogPath()
     isVerbose.value = await getVerboseLogging()
     // Check for br CLI updates (non-blocking)
-    checkBdCliUpdate().then((info) => { bdCliUpdate.value = info }).catch(() => {})
+    checkBrCliUpdate().then((info) => { brCliUpdate.value = info }).catch(() => {})
     // Enable backend logging so log_info!/log_debug! macros produce output
     await setLoggingEnabled(true)
     if (isAutoRefresh.value) {
@@ -363,26 +363,26 @@ onUnmounted(() => {
 
       <div class="flex items-center gap-2">
         <button
-          v-if="bdCliUpdate?.hasUpdate"
+          v-if="brCliUpdate?.hasUpdate"
           class="flex items-center gap-1.5 text-xs font-medium text-foreground hover:text-green-500 transition-colors cursor-pointer"
-          :title="`Update available: v${bdCliUpdate.latestVersion} — click to view`"
-          @click="openUrl(bdCliUpdate.releaseUrl)"
+          :title="`Update available: v${brCliUpdate.latestVersion} — click to view`"
+          @click="openUrl(brCliUpdate.releaseUrl)"
         >
-          {{ bdVersion }}
+          {{ brVersion }}
           <span class="relative flex h-2.5 w-2.5">
             <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
             <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500"></span>
           </span>
         </button>
         <button
-          v-else-if="bdCliUpdate"
+          v-else-if="brCliUpdate"
           class="text-xs font-medium text-foreground hover:text-primary transition-colors cursor-pointer"
           title="View br CLI releases"
-          @click="openUrl(bdCliUpdate.releaseUrl)"
+          @click="openUrl(brCliUpdate.releaseUrl)"
         >
-          {{ bdVersion }}
+          {{ brVersion }}
         </button>
-        <span v-else class="text-xs font-medium text-foreground">{{ bdVersion }}</span>
+        <span v-else class="text-xs font-medium text-foreground">{{ brVersion }}</span>
         <span class="text-muted-foreground">|</span>
         <span class="text-xs text-muted-foreground truncate max-w-[300px]">{{ logPath }}</span>
         <Button variant="outline" size="sm" class="h-7 w-7 p-0" @click="close">

@@ -14,7 +14,7 @@ import {
   MenubarTrigger,
 } from 'reka-ui'
 import { computePaste, selectedText } from '~/utils/edit-commands'
-import { logFrontend } from '~/utils/bd-api'
+import { logFrontend } from '~/utils/br-api'
 
 const { openAbout, openSettings, openUpdate, toggleLogs } = useAppMenu()
 const { minimizeWindow, toggleMaximizeWindow, closeWindow } = useTauriWindow()

@@ -1,4 +1,4 @@
-import { bdList, unwrapBrEnvelope } from '../../utils/bd-executor'
+import { brList, unwrapBrEnvelope } from '../../utils/br-executor'
 
 interface Issue {
   id: string
@@ -12,7 +12,7 @@ export default defineEventHandler(async (event) => {
   const query = getQuery(event)
   const cwd = query.path ? String(query.path) : undefined
 
-  const result = await bdList({}, cwd)
+  const result = await brList({}, cwd)
 
   if (!result.success) {
     throw createError({

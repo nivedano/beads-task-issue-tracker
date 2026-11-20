@@ -1,4 +1,4 @@
-import { bdCommentsAdd } from '../../../utils/bd-executor'
+import { brCommentsAdd } from '../../../utils/br-executor'
 
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')
@@ -21,7 +21,7 @@ export default defineEventHandler(async (event) => {
 
   const cwd = query.path ? String(query.path) : undefined
 
-  const result = await bdCommentsAdd(id, body.content.trim(), cwd)
+  const result = await brCommentsAdd(id, body.content.trim(), cwd)
 
   if (!result.success) {
     throw createError({

@@ -35,7 +35,7 @@ describe('normalizePath', () => {
 
   it('keeps the Unix root intact', () => {
     // Stripping `/` to '' would make setPath store an empty beadsPath, and
-    // every bd call would silently run in the app's cwd.
+    // every br call would silently run in the app's cwd.
     expect(normalizePath('/')).toBe('/')
     expect(normalizePath('///')).toBe('/')
   })

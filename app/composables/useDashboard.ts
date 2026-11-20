@@ -1,5 +1,5 @@
 import type { Issue, DashboardStats } from '~/types/issue'
-import { bdReady } from '~/utils/bd-api'
+import { brReady } from '~/utils/br-api'
 import { computeStatsFromIssues } from '~/utils/issue-helpers'
 
 export function useDashboard() {
@@ -13,8 +13,8 @@ export function useDashboard() {
   // Helper to get the current path
   const getPath = () => beadsPath.value && beadsPath.value !== '.' ? beadsPath.value : undefined
 
-  // Prefetch bdReady data — call this before fetchIssues to overlap the two API calls
-  const prefetchReady = () => bdReady(getPath()).catch(() => [] as Issue[])
+  // Prefetch brReady data — call this before fetchIssues to overlap the two API calls
+  const prefetchReady = () => brReady(getPath()).catch(() => [] as Issue[])
 
   // Fetch stats - now accepts issues to avoid extra API calls
   // Optional prefetchedReady: a Promise<Issue[]> from prefetchReady() already in flight
@@ -34,13 +34,13 @@ export function useDashboard() {
         stats.value = computeStatsFromIssues([])
       }
 
-      // Restore ready count while waiting for bdReady
+      // Restore ready count while waiting for brReady
       stats.value.ready = currentReady
 
       // Use prefetched ready data if available, otherwise fetch now
       const readyData = prefetchedReady
         ? await prefetchedReady
-        : await bdReady(getPath())
+        : await brReady(getPath())
       readyIssues.value = readyData || []
 
       // Update ready count in stats
@@ -54,7 +54,7 @@ export function useDashboard() {
 
   /**
    * Update dashboard from pre-fetched poll data (no API calls needed).
-   * Used by the batched polling system to avoid separate bdReady call.
+   * Used by the batched polling system to avoid separate brReady call.
    */
   const updateFromPollData = (issues: Issue[], readyData: Issue[]) => {
     stats.value = computeStatsFromIssues(issues)
