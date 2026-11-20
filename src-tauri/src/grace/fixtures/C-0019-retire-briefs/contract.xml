@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Contract id="C-0019-retire-briefs" revision="1" title="The contract is the approval surface; the separate brief is retired">
+  <Problem>The HTML brief was introduced to replace long GRACE 4 specifications, but a GRACE 5 contract is shorter than its brief and already states the behavioural delta, boundary, checks and decisions. The brief now duplicates that text with inflated prose, consumes preparation time and budget, and adds no decision the owner cannot take on the contract. Its independent writer did catch real contract defects, so the burden is the page and the fidelity machinery, not the independent read. The owner requested the brief's removal on 2026-11-17.</Problem>
+  <Change>The contract becomes the owner's approval surface. A new approval record binds the contract hash, each check definition and the decision; it carries no `brief-sha256`. Preparation keeps one lightweight independent contract read: an independent subagent receives the contract, the cited rules and read access, and returns findings only — a criterion its check cannot serve, an undefined term, a contradiction, a boundary that does not cover Change, or a cited path that does not exist. There is no page, no fidelity parser and no owner-facing brief; the author resolves the findings by editing the contract before the owner gate. `grace5 check` validates a brief only for a legacy approval that names one, and a new revision requires no brief. `run` and `close` impose no brief obligation on a new approval; `close.xml` omits `brief`. Historical briefs, approvals and close records remain readable and keep their hashes. `models/architecture/brief.md` and `templates/brief.html` leave the active surface; the parser remains only for legacy records. Prepare, orchestrate, execute and review guidance drop the brief writer and the brief handoff, and keep the findings-only independent contract read. Checks, receipts, complete-diff independent review, protected paths, approvals and closure stay as they are.</Change>
+  <Constraints>
+    <Constraint id="K1" rule="AGENTS.md">No command, check kind, receipt field, review rule or new approval artifact is added; the only lifecycle artifact removed is the brief.</Constraint>
+    <Constraint id="K2" rule="models/architecture/authorization.md">An approval still binds the contract text, each check definition and the decision, is given by the owner alone, and is never inferred; removing the brief hash weakens no authority.</Constraint>
+    <Constraint id="K3" rule="models/architecture/evidence-records.md">Historical records remain valid: a legacy approval that carries `brief-sha256` still requires that brief to match, while a new approval without it requires none.</Constraint>
+    <Constraint id="K4" rule="models/architecture/rationale-ledger.md">L-04 is retired with the owner's stated burden and its removal criterion, and L-05 is amended to the contract-only binding; no other mechanism is added.</Constraint>
+    <Constraint id="K5" rule="models/architecture/upgrade.md">No version, pin, tag, migration boundary or migration row is registered by this change; migration implementation and tests may be prepared, and the release registers any boundary.</Constraint>
+    <Constraint id="K6">Checks, receipt provenance, independent complete-diff review, protected paths and closure are unchanged; no brief-derived assertion, summary or review substitute is accepted.</Constraint>
+    <Constraint id="K7">All seven prepared changes protect `models/architecture/templates/**`, and C-0012, C-0014, C-0017 and C-0018 also protect `models/architecture/brief.md`; this change executes only after all seven close or after their own approved material revisions remove the protection. Their briefs become history and are never rewritten, and C-0016's feasibility and discrimination guidance is relocated into the contract and prepare guidance before `brief.md` is deleted.</Constraint>
+    <Constraint id="K8">Every consumer is updated: `src/brief.ts` remains a legacy parser only; the `state.ts` and `close.ts` gates distinguish legacy from new; `approval.xsd` and `close.xsd` make the brief fields optional; `commands.md` drops the brief refusal phrases; `examples/defective-brief` stays a legacy fixture; conformance FS-12, FS-14, RV-04 and RV-10 are revised or retained as legacy cases; `m2-proposal.md` records the metric gap; L-04 is retired. The sysops graceopt brief metrics are a cross-repo consequence, not changed here.</Constraint>
+  </Constraints>
+  <NonGoals>
+    <NonGoal id="N1">No weakening of checks, independent review, receipt provenance, protected paths or closure.</NonGoal>
+    <NonGoal id="N2">No rewrite of historical briefs, approvals or close records.</NonGoal>
+    <NonGoal id="N3">No sysops METHOD.md or graceopt change; brief-derived metrics become unavailable for new changes and are a separate measurement decision.</NonGoal>
+    <NonGoal id="N4">No release, version, pin, tag or migration-table change.</NonGoal>
+    <NonGoal id="N5">No new approval artifact and no second decision.</NonGoal>
+  </NonGoals>
+  <Acceptance>
+    <Criterion id="A1" checks="CK1 CK2 CK6">A new change with no brief can be approved, started, run, reviewed and closed, and neither `run` nor `close` names a missing brief.</Criterion>
+    <Criterion id="A2" checks="CK2 CK6">A legacy change with a brief and `brief-sha256` still validates, runs and closes, and a mismatched legacy brief still refuses.</Criterion>
+    <Criterion id="A3" checks="CK2">A contract edited after approval is still reported as altered after approval and treated as unapproved; the absence of a brief hides no alteration.</Criterion>
+    <Criterion id="A4" checks="CK2 CK6">An approval without `brief-sha256` binds the contract hash and every check definition; a missing or wrong `Bound` still fails.</Criterion>
+    <Criterion id="A5" checks="CK2 CK6">Review still receives the contract, complete diff, receipts and cited rules, writes findings and per-check adequacy, and requires no brief.</Criterion>
+    <Criterion id="A6" checks="CK5 CK8">The retired brief documents leave the active surface, and active lifecycle guidance no longer instructs an independent brief or a brief handoff.</Criterion>
+    <Criterion id="A7" checks="CK3 CK7">Historical examples and every closed change still read with no defect.</Criterion>
+    <Criterion id="A8" checks="CK1 CK4">The kernel type-checks, and the generated packages and CLI reference remain current.</Criterion>
+    <Criterion id="A9" checks="CK5 CK6">Preparation keeps one independent findings-only contract read before the owner gate; it creates no page and no fidelity parser, and the author resolves its findings in the contract.</Criterion>
+  </Acceptance>
+  <Affected>
+    <Path>models/architecture/**</Path>
+    <Path>models/architecture/brief.md</Path>
+    <Path>models/architecture/templates/brief.html</Path>
+    <Path>src/**</Path>
+    <Path>skills/**</Path>
+    <Path>packages/**</Path>
+    <Path>AGENTS.md</Path>
+    <Path>README.md</Path>
+    <Name>contract approval surface</Name>
+    <Name>legacy brief binding</Name>
+    <Protected>.grace5/changes/closed/**</Protected>
+    <Protected>models/architecture/examples/**</Protected>
+    <Protected>models/architecture/schemas/common.xsd</Protected>
+    <Protected>models/architecture/schemas/contract.xsd</Protected>
+    <Protected>models/architecture/schemas/run.xsd</Protected>
+    <Protected>models/architecture/schemas/review.xsd</Protected>
+    <Protected>models/architecture/source-identity.md</Protected>
+    <Protected>models/architecture/trace-provenance.md</Protected>
+    <Protected>models/architecture/upgrade.md</Protected>
+    <Protected>package.json</Protected>
+    <Protected>.grace5/kernel-version</Protected>
+    <Protected>CLAUDE.md</Protected>
+  </Affected>
+  <Checks>
+    <Automated id="CK1" budget="120">
+      <Command>bun run check</Command>
+    </Automated>
+    <Automated id="CK2" budget="600">
+      <Command>bun test --parallel</Command>
+    </Automated>
+    <Automated id="CK3" budget="120">
+      <Command>bun run examples:verify</Command>
+    </Automated>
+    <Automated id="CK4" budget="120">
+      <Command>bun run package:verify</Command>
+    </Automated>
+    <Trace id="CK5" origin="any" budget="60">
+      <Command>bun -e "const fs=require('fs'); const prepare=fs.readFileSync('skills/grace5-prepare/SKILL.md','utf8'); const files=['skills/grace5-prepare/SKILL.md','skills/grace5-orchestrate/SKILL.md','skills/grace5-execute/SKILL.md','skills/grace5-review/SKILL.md','models/architecture/method.md','models/architecture/authorization.md','models/architecture/commands.md']; const bad=files.filter(f=>/brief-&lt;rev&gt;|independent brief|brief writer|brief for approval/i.test(fs.readFileSync(f,'utf8'))); if(!/independent contract read/i.test(prepare)){console.error('missing independent contract read'); process.exit(1);} if(bad.length){console.error('brief references: '+bad.join(', ')); process.exit(1);} console.log('briefless guidance: ok');"</Command>
+      <Expect>briefless guidance: ok</Expect>
+    </Trace>
+    <Automated id="CK6" budget="180">
+      <Command>bun test src/conformance/briefless.test.ts</Command>
+    </Automated>
+    <Automated id="CK7" budget="120">
+      <Command>bun -e "const cp=require('child_process'); const ids=['C-0008-approval-executes','C-0009-decision-not-conversation','C-0011-clean-skill-source']; for (const id of ids){const r=cp.spawnSync('bun',['src/cli.ts','check',id]); if(r.status!==0){process.stdout.write(r.stdout);process.stderr.write(r.stderr);process.exit(1);}} console.log('legacy records: ok');"</Command>
+    </Automated>
+    <Trace id="CK8" origin="any" budget="30">
+      <Command>git ls-files models/architecture</Command>
+      <Expect>models/architecture/authorization.md</Expect>
+      <Forbid>models/architecture/brief.md</Forbid>
+      <Forbid>models/architecture/templates/brief.html</Forbid>
+    </Trace>
+  </Checks>
+  <Decisions>
+    <Decision id="D1">The owner reads the contract and answers in one statement; the contract's Problem, Change, Constraints, NonGoals, Acceptance, Affected, Checks and Decisions are the approval surface.</Decision>
+    <Decision id="D2">A new approval binds `contract-sha256`, each check's definition hash and the decision; `brief-sha256` is legacy and is neither required nor invented.</Decision>
+    <Decision id="D3">A legacy approval that carries `brief-sha256` keeps its brief obligation; a new approval without the attribute has none, and historical records are never rewritten.</Decision>
+    <Decision id="D4">`check`, `run` and `close` distinguish the two cases by the presence of `brief-sha256`; they do not infer a brief from a file on disk.</Decision>
+    <Decision id="D5">The brief documents and template leave the active surface; the parser remains only to validate legacy briefs and to keep historical examples and closed changes readable.</Decision>
+    <Decision id="D6">The independent review is unchanged and still reads the contract, complete diff, receipts and cited rules; it judges per-check adequacy and findings without a brief.</Decision>
+    <Decision id="D7">Brief-derived measurements become unavailable for new changes; the control center's method is not changed here and must decide their replacement separately.</Decision>
+    <Decision id="D8">This change registers no release or migration boundary; the implementation and tests may be prepared, and the release act registers the boundary it carries.</Decision>
+    <Decision id="D9">Pre-approval independence survives as a findings-only independent contract read: the reader is a subagent that did not write the contract, receives the contract, cited rules and read access, and returns findings; the author resolves them before the owner gate. No page, fidelity parser or owner-facing brief returns, and the final independent review is unchanged.</Decision>
+    <Decision id="D10">The seven prepared changes keep their existing briefs as history; all seven protect `templates/**`, and C-0012, C-0014, C-0017 and C-0018 protect `brief.md`, so this change is later in the execution order unless those changes' own approved revisions remove the protection.</Decision>
+  </Decisions>
+</Contract>

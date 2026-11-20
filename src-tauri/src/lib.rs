@@ -10,6 +10,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
+mod grace;
+
 // Global flags for logging
 static LOGGING_ENABLED: AtomicBool = AtomicBool::new(false);
 static VERBOSE_LOGGING: AtomicBool = AtomicBool::new(false);
