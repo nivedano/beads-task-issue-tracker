@@ -10,7 +10,7 @@ const props = defineProps<{
 const stageConfig: Record<GraceStage, { label: string; class: string }> = {
   prepared: { label: 'PREPARED', class: 'bg-secondary text-secondary-foreground' },
   approved: { label: 'APPROVED', class: 'bg-blue-600 text-white' },
-  executing: { label: 'EXECUTING', class: 'bg-amber-500 text-white' },
+  executing: { label: 'EXECUTING', class: 'bg-amber-500 text-black' },
   reviewed: { label: 'REVIEWED', class: 'bg-violet-600 text-white' },
   closed: { label: 'CLOSED', class: 'bg-green-600 text-white' },
 }

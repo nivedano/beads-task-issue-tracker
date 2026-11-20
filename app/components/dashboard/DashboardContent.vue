@@ -30,11 +30,14 @@ const props = withDefaults(defineProps<{
   hideKpis?: boolean
   /** Mobile only: the project has a `.grace5` registry but no `.beads`. */
   graceOnly?: boolean
+  /** Mobile only: probing finished and the folder exposes neither registry. */
+  noRegistry?: boolean
 }>(), {
   kpiGridCols: 5,
   showOnboarding: false,
   hideKpis: false,
   graceOnly: false,
+  noRegistry: false,
 })
 
 const emit = defineEmits<{
@@ -227,6 +230,9 @@ const isReadyCollapsed = useProjectStorage('readyCollapsed', true)
 
   <div v-else class="flex items-center justify-center py-8">
     <OnboardingCard v-if="showOnboarding" @browse="emit('browse')" />
+    <p v-else-if="noRegistry" class="text-muted-foreground text-sm text-center">
+      No beads or GRACE registry in this project
+    </p>
     <p v-else-if="graceOnly" class="text-muted-foreground text-sm text-center">
       No beads registry in this project — GRACE explorer active
     </p>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { GraceChangeSummary } from '~/types/grace'
+import type { GraceChangeSummary, GraceSortField } from '~/types/grace'
 import type { ColumnConfig } from '~/types/issue'
 import {
   Table,
@@ -16,8 +16,6 @@ import {
 } from '~/components/ui/tooltip'
 import GraceStageBadge from '~/components/grace/GraceStageBadge.vue'
 import GraceAuthorizationBadge from '~/components/grace/GraceAuthorizationBadge.vue'
-
-type GraceSortField = 'id' | 'title' | 'stage' | 'revision'
 
 const props = defineProps<{
   changes: GraceChangeSummary[]
@@ -110,27 +108,26 @@ const toggleSort = (columnId: string) => {
       </TableHeader>
 
       <TableBody>
-        <TableRow v-if="visibleColumns.length === 0 || changes.length === 0" class="hover:bg-transparent">
+        <TableRow v-if="changes.length === 0" class="hover:bg-transparent">
           <TableCell
             :colspan="Math.max(visibleColumns.length, 1)"
             class="h-24 text-center text-muted-foreground"
           >
-            {{ visibleColumns.length === 0 ? 'No columns selected' : 'No GRACE changes found' }}
+            No GRACE changes found
           </TableCell>
         </TableRow>
 
-        <template v-if="visibleColumns.length > 0">
-          <TableRow
-            v-for="change in changes"
-            :key="change.id"
-            :data-grace-id="change.id"
-            class="cursor-pointer"
-            :class="[
-              selectedId === change.id ? 'bg-accent/50 hover:bg-accent/70' : 'hover:bg-muted/50',
-              isFocused(change.id) ? 'bg-primary/10 ring-1 ring-inset ring-primary/40' : '',
-            ]"
-            @click="setFocused(change.id); emit('select', change)"
-          >
+        <TableRow
+          v-for="change in changes"
+          :key="`${change.id}:${change.inClosedDir ? 'closed' : 'open'}`"
+          :data-grace-id="change.id"
+          class="cursor-pointer"
+          :class="[
+            selectedId === change.id ? 'bg-accent/50 hover:bg-accent/70' : 'hover:bg-muted/50',
+            isFocused(change.id) ? 'bg-primary/10 ring-1 ring-inset ring-primary/40' : '',
+          ]"
+          @click="setFocused(change.id); emit('select', change)"
+        >
             <TableCell
               v-for="col in visibleColumns"
               :key="col.id"
@@ -187,7 +184,6 @@ const toggleSort = (columnId: string) => {
               </template>
             </TableCell>
           </TableRow>
-        </template>
       </TableBody>
     </Table>
   </div>

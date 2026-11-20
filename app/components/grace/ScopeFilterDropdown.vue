@@ -12,8 +12,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '~/components/ui/tooltip'
-
-type GraceScope = 'open' | 'closed' | 'all'
+import type { GraceScope } from '~/types/grace'
 
 defineProps<{
   scope: GraceScope

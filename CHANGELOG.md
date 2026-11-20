@@ -1,6 +1,6 @@
 # Changelog
 
-## [2.27.0] - 2026-11-20
+## [Unreleased]
 
 > Requires **bd 0.49.x**. Recommended CLI: **br** 0.7.x (verified with 0.7.4).
 

@@ -1,13 +1,11 @@
 <script setup lang="ts">
-import type { GraceStage, GraceAuthorization, GraceChangeSummary } from '~/types/grace'
+import type { GraceStage, GraceAuthorization, GraceChangeSummary, GraceSortField } from '~/types/grace'
 import type { ColumnConfig } from '~/types/issue'
 import { useProjectStorage } from '~/composables/useProjectStorage'
 import type { GraceFilters } from '~/utils/grace-helpers'
 import GraceToolbar from '~/components/grace/GraceToolbar.vue'
 import GraceFilterChips from '~/components/grace/GraceFilterChips.vue'
 import GraceTable from '~/components/grace/GraceTable.vue'
-
-type GraceSortField = 'id' | 'title' | 'stage' | 'revision'
 
 const DEFAULT_COLUMNS: ColumnConfig[] = [
   { id: 'id', label: 'ID', visible: true, sortable: true },
@@ -42,15 +40,16 @@ const emit = defineEmits<{
 
 const columns = useProjectStorage<ColumnConfig[]>('grace:columns', DEFAULT_COLUMNS)
 
-// The identity column is always rendered first and visible: it carries the
-// malformed-defect signal, which column config must never be able to hide.
-// Also reconciles stored configs from older sessions that hid it.
+// Reconcile the stored config against the canonical columns: unknown ids are
+// dropped (a renamed/removed column), new defaults are appended in their
+// canonical position, and the identity column stays first and visible — it
+// carries the malformed-defect signal, which config must never hide.
 const tableColumns = computed<ColumnConfig[]>(() => {
-  const idColumn = columns.value.find(col => col.id === 'id') ?? DEFAULT_COLUMNS[0]!
-  return [
-    { ...idColumn, visible: true },
-    ...columns.value.filter(col => col.id !== 'id'),
-  ]
+  const savedVisibility = new Map(columns.value.map(column => [column.id, column.visible]))
+  return DEFAULT_COLUMNS.map((column, index) => ({
+    ...column,
+    visible: index === 0 ? true : (savedVisibility.get(column.id) ?? column.visible),
+  }))
 })
 
 const toolbarRef = ref<InstanceType<typeof GraceToolbar> | null>(null)

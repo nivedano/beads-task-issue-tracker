@@ -191,7 +191,9 @@ watch(() => props.detail?.summary.id, () => {
         </div>
 
         <p class="text-[10px] text-muted-foreground">
-          Structural read-only view — grace5 check/status remains authoritative
+          Structural read-only view — grace5 check/status remains authoritative. Authorization
+          matches the kernel for schema-valid records; structurally invalid records are flagged,
+          not re-validated.
         </p>
       </div>
 
@@ -265,7 +267,7 @@ watch(() => props.detail?.summary.id, () => {
                 Open notes.md
               </Button>
             </div>
-            <GraceNotesView :notes-md="detail.notesMd" />
+            <GraceNotesView :notes-md="detail.notesMd" :truncated="detail.notesTruncated" />
           </div>
         </CollapsibleSection>
       </div>

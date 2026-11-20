@@ -295,6 +295,8 @@ pub struct GraceChangeDetail {
     pub close: Option<GraceClose>,
     pub briefs: Vec<GraceBrief>,
     pub notes_md: Option<String>,
+    /// `notes_md` hit the 1 MiB read cap (the content is partial).
+    pub notes_truncated: bool,
     pub log_dirs: Vec<u32>,
     pub defects: Vec<String>,
     pub latest_results: Vec<GraceRunResult>,

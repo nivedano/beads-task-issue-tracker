@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { Issue, IssueStatus, UpdateIssuePayload } from '~/types/issue'
-import type { GraceChangeSummary } from '~/types/grace'
+import type { GraceChangeSummary, GraceSortField } from '~/types/grace'
 import { isIssueBlocked } from '~/utils/issue-helpers'
 import { probeProjectCapabilities } from '~/utils/bd-api'
 import { resolveExplorerTab, type GraceFilters } from '~/utils/grace-helpers'
@@ -173,6 +173,9 @@ const showOnboarding = computed(() => {
 // explorer. Probed BEFORE any fetch decision so a grace-only (or empty) folder
 // never triggers a bd/git command.
 const caps = ref<{ hasBeads: boolean, hasGrace: boolean }>({ hasBeads: false, hasGrace: false })
+// True once the current project has been probed. Until then the dashboard stays
+// on "Loading..." instead of claiming the folder has no registry.
+const capsProbed = ref(false)
 const explorerTabStorage = useProjectStorage<'issues' | 'grace'>('explorerTab', 'issues')
 // The strip exists only with two registries; with one, that explorer renders bare.
 const effectiveExplorer = computed(() => resolveExplorerTab(explorerTabStorage.value, caps.value))
@@ -181,20 +184,28 @@ const effectiveExplorer = computed(() => resolveExplorerTab(explorerTabStorage.v
 // "Loading…"), but the GRACE explorer is fully live.
 const isGraceOnlyProject = computed(() => !caps.value.hasBeads && caps.value.hasGrace && !showOnboarding.value)
 
+// Probing finished and neither registry exists: a real dead end, not a loading
+// state (also covers a probe rejection).
+const hasNoRegistry = computed(() => capsProbed.value && !caps.value.hasBeads && !caps.value.hasGrace && !showOnboarding.value)
+
 async function probeCapabilities(path: string) {
   // `.` is the pre-existing default path. Probing it is meaningless on desktop
   // (it is relative to the app process cwd) and web mode has always rendered the
   // beads explorer for it, so keep that legacy meaning.
-  if (path === '.') {
-    caps.value = { hasBeads: true, hasGrace: false }
-    return
-  }
-
   try {
-    caps.value = await probeProjectCapabilities(path)
-  } catch {
-    // A probe failure must never break mount or a project switch.
-    caps.value = { hasBeads: false, hasGrace: false }
+    if (path === '.') {
+      caps.value = { hasBeads: true, hasGrace: false }
+      return
+    }
+
+    try {
+      caps.value = await probeProjectCapabilities(path)
+    } catch {
+      // A probe failure must never break mount or a project switch.
+      caps.value = { hasBeads: false, hasGrace: false }
+    }
+  } finally {
+    capsProbed.value = true
   }
 }
 
@@ -764,6 +775,7 @@ const handlePathChange = async () => {
   clearStats()   // Reset stats so previous project's ready work doesn't persist
   clearGrace()   // Same for GRACE: never show the previous project's changes
   caps.value = { hasBeads: false, hasGrace: false }
+  capsProbed.value = false
   skipMtimeCheck = false
 
   // Stop polling + change detection during project switch to prevent:
@@ -866,6 +878,7 @@ const handleReset = () => {
   clearStats()
   clearGrace()
   caps.value = { hasBeads: false, hasGrace: false }
+  capsProbed.value = false
   isEditMode.value = false
   isCreatingNew.value = false
 }
@@ -918,7 +931,7 @@ const handleGraceFiltersUpdate = (next: GraceFilters) => {
 }
 
 // New object: `useGrace` stores the sort default and must never see it mutated.
-const handleGraceSort = (field: 'id' | 'title' | 'stage' | 'revision', direction: 'asc' | 'desc') => {
+const handleGraceSort = (field: GraceSortField, direction: 'asc' | 'desc') => {
   graceSort.value = { field, direction }
 }
 
@@ -1254,6 +1267,17 @@ watch(
                   Browse changes in the center panel.
                 </p>
               </div>
+              <!-- Neither registry: probing finished, so this is not a loading state. -->
+              <div v-else-if="hasNoRegistry" class="space-y-1">
+                <p class="text-sm font-medium">
+                  No beads or GRACE registry in this project
+                </p>
+                <p class="text-xs text-muted-foreground">
+                  Check that the folder contains a
+                  <code class="font-mono">.beads</code> or
+                  <code class="font-mono">.grace5</code> registry.
+                </p>
+              </div>
               <span v-else class="text-muted-foreground text-sm">Loading...</span>
             </div>
           </div>
@@ -1569,6 +1593,7 @@ watch(
             :active-kpi-filter="activeKpiFilter"
             :show-onboarding="showOnboarding"
             :grace-only="isGraceOnlyProject"
+            :no-registry="hasNoRegistry"
             @select-issue="handleSelectIssue"
             @kpi-click="handleKpiClick"
             @reorder-pinned="reorderPinned"

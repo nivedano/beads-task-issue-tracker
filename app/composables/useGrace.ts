@@ -6,12 +6,12 @@
  * late responses from a previous project or selection out of the refs.
  */
 import { ref, reactive, computed } from 'vue'
-import type { GraceStage, GraceAuthorization, GraceChangeSummary, GraceChangeDetail, GraceListResult } from '~/types/grace'
+import type { GraceStage, GraceAuthorization, GraceChangeSummary, GraceChangeDetail, GraceListResult, GraceScope, GraceSortField } from '~/types/grace'
 import { graceList, graceShow, graceCheckChanged } from '~/utils/bd-api'
 import { filterGraceChanges, sortGraceChanges, graceStats, type GraceFilters } from '~/utils/grace-helpers'
 import { useProjectStorage } from '~/composables/useProjectStorage'
 
-type GraceSort = { field: 'id' | 'title' | 'stage' | 'revision', direction: 'asc' | 'desc' }
+type GraceSort = { field: GraceSortField, direction: 'asc' | 'desc' }
 
 // Shared state across all components (singleton pattern)
 const changes = ref<GraceChangeSummary[]>([])
@@ -26,7 +26,7 @@ const error = ref<string | null>(null)
 const search = useProjectStorage<string>('grace:search', '')
 const stageFilter = useProjectStorage<GraceStage[]>('grace:filters:stage', [])
 const authorizationFilter = useProjectStorage<GraceAuthorization[]>('grace:filters:authorization', [])
-const scopeFilter = useProjectStorage<'open' | 'closed' | 'all'>('grace:filters:scope', 'open')
+const scopeFilter = useProjectStorage<GraceScope>('grace:filters:scope', 'open')
 const sort = useProjectStorage<Readonly<GraceSort>>('grace:sort', { field: 'id', direction: 'desc' })
 
 // Two-way facade so components can assign `filters.stage = [...]` and still

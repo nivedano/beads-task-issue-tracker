@@ -1,10 +1,8 @@
 <script setup lang="ts">
-import type { GraceStage, GraceAuthorization } from '~/types/grace'
+import type { GraceStage, GraceAuthorization, GraceScope } from '~/types/grace'
 import { Button } from '~/components/ui/button'
 import GraceStageBadge from '~/components/grace/GraceStageBadge.vue'
 import GraceAuthorizationBadge from '~/components/grace/GraceAuthorizationBadge.vue'
-
-type GraceScope = 'open' | 'closed' | 'all'
 
 const props = defineProps<{
   stageFilters: GraceStage[]

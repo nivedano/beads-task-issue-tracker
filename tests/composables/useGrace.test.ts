@@ -49,6 +49,7 @@ function detail(summary: GraceChangeSummary): GraceChangeDetail {
     close: null,
     briefs: [],
     notesMd: null,
+    notesTruncated: false,
     logDirs: [],
     defects: [],
     latestResults: [],

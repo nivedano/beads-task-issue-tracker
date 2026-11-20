@@ -770,86 +770,13 @@ mod tests {
 #[cfg(test)]
 mod records_tests {
     use super::*;
+    use crate::grace::test_support::{write_fixture_change, TempDir, CHANGE_ID};
     use std::path::PathBuf;
-    use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    const CHANGE_ID: &str = "C-0019-retire-briefs";
-
-    struct TempDir {
-        path: PathBuf,
-    }
-
-    impl TempDir {
-        fn new() -> TempDir {
-            static COUNTER: AtomicUsize = AtomicUsize::new(0);
-            let nanos = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos();
-            let path = std::env::temp_dir().join(format!(
-                "grace-records-{}-{nanos}-{}",
-                std::process::id(),
-                COUNTER.fetch_add(1, Ordering::Relaxed)
-            ));
-            fs::create_dir_all(&path).unwrap();
-            TempDir { path }
-        }
-
-        fn path(&self) -> &Path {
-            &self.path
-        }
-    }
-
-    impl Drop for TempDir {
-        fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.path);
-        }
-    }
 
     /// Rebuilds the fixture change directory from the checked-in bytes.
     fn fixture_change() -> TempDir {
-        let dir = TempDir::new();
-        let change = dir.path().join(CHANGE_ID);
-        fs::create_dir_all(change.join("records")).unwrap();
-        fs::write(
-            change.join("contract.xml"),
-            include_bytes!("fixtures/C-0019-retire-briefs/contract.xml"),
-        )
-        .unwrap();
-        fs::write(
-            change.join("notes.md"),
-            include_bytes!("fixtures/C-0019-retire-briefs/notes.md"),
-        )
-        .unwrap();
-        for (name, bytes) in [
-            (
-                "approval-1.xml",
-                &include_bytes!("fixtures/C-0019-retire-briefs/records/approval-1.xml")[..],
-            ),
-            (
-                "run-1.xml",
-                &include_bytes!("fixtures/C-0019-retire-briefs/records/run-1.xml")[..],
-            ),
-            (
-                "run-3.xml",
-                &include_bytes!("fixtures/C-0019-retire-briefs/records/run-3.xml")[..],
-            ),
-            (
-                "review-1.xml",
-                &include_bytes!("fixtures/C-0019-retire-briefs/records/review-1.xml")[..],
-            ),
-            (
-                "close.xml",
-                &include_bytes!("fixtures/C-0019-retire-briefs/records/close.xml")[..],
-            ),
-            (
-                "brief-1.html",
-                &include_bytes!("fixtures/C-0019-retire-briefs/records/brief-1.html")[..],
-            ),
-        ] {
-            fs::write(change.join("records").join(name), bytes).unwrap();
-        }
+        let dir = TempDir::new("records");
+        write_fixture_change(&dir.path().join(CHANGE_ID));
         dir
     }
 
@@ -1056,7 +983,7 @@ mod records_tests {
 
     #[test]
     fn reports_a_records_path_that_cannot_be_read() {
-        let dir = TempDir::new();
+        let dir = TempDir::new("unreadable-records");
         let change = dir.path().join(CHANGE_ID);
         fs::create_dir_all(&change).unwrap();
         fs::write(change.join("records"), b"not a directory").unwrap();

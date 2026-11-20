@@ -4,13 +4,13 @@
  * No Vue imports: filtering, sorting, counts and the tab rule are plain
  * functions so they stay testable and reusable from the composable/components.
  */
-import type { GraceStage, GraceAuthorization, GraceChangeSummary } from '~/types/grace'
+import type { GraceStage, GraceAuthorization, GraceChangeSummary, GraceScope, GraceSortField } from '~/types/grace'
 import { naturalCompare } from '~/utils/issue-helpers'
 
 export interface GraceFilters {
   stage: GraceStage[]
   authorization: GraceAuthorization[]
-  scope: 'open' | 'closed' | 'all'
+  scope: GraceScope
 }
 
 /**
@@ -65,7 +65,7 @@ function compareNullable<T>(
  */
 export function sortGraceChanges(
   changes: GraceChangeSummary[],
-  field: 'id' | 'title' | 'stage' | 'revision',
+  field: GraceSortField,
   direction: 'asc' | 'desc',
 ): GraceChangeSummary[] {
   const dir = direction === 'asc' ? 1 : -1

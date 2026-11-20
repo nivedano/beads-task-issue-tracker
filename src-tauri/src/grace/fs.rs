@@ -27,11 +27,12 @@ fn capped_bytes(path: &Path) -> std::io::Result<(Vec<u8>, bool, u64)> {
     Ok((buffer, size > MAX_READ_BYTES as u64, size))
 }
 
-/// Lossy UTF-8 text under the same cap; `None` when the file cannot be read.
-pub(crate) fn read_text_capped(path: &Path) -> Option<String> {
+/// Lossy UTF-8 text under the same cap plus the truncation flag; `None` when
+/// the file cannot be read. The flag is `true` when bytes were dropped.
+pub(crate) fn read_text_capped(path: &Path) -> Option<(String, bool)> {
     capped_bytes(path)
         .ok()
-        .map(|(bytes, _, _)| String::from_utf8_lossy(&bytes).into_owned())
+        .map(|(bytes, truncated, _)| (String::from_utf8_lossy(&bytes).into_owned(), truncated))
 }
 
 /// Resolves `rel_path` inside `<project>/.grace5/` to a canonical file path,
@@ -60,12 +61,49 @@ pub fn resolve_grace_file(project: &Path, rel_path: &str) -> Result<PathBuf, Str
     Ok(resolved)
 }
 
+/// Files the explorer may hand to the OS opener (defense in depth, mirroring
+/// `open_image_file`'s extension allowlist).
+const OPENABLE_EXTENSIONS: [&str; 6] = ["xml", "md", "markdown", "html", "log", "txt"];
+
+/// Refuses anything outside the viewer's read-only artifact set — a `.grace5/`
+/// directory must never be able to launch an executable through the explorer.
+pub fn ensure_openable_extension(path: &Path) -> Result<(), String> {
+    let extension = path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .map(|extension| extension.to_ascii_lowercase());
+    let allowed = extension
+        .as_deref()
+        .map(|extension| OPENABLE_EXTENSIONS.contains(&extension))
+        .unwrap_or(false);
+    if allowed {
+        Ok(())
+    } else {
+        Err(format!(
+            "Only {} files can be opened from the GRACE explorer",
+            OPENABLE_EXTENSIONS
+                .iter()
+                .map(|extension| format!(".{extension}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ))
+    }
+}
+
 /// The path argument handed to the OS opener. `canonicalize` returns the
 /// Windows verbatim form (`\\?\C:\...`) that `cmd /C start` (ShellExecute)
 /// cannot open, so the prefix is stripped — containment was already proven on
 /// the canonical path. A no-op elsewhere.
 pub fn open_argument(resolved: &Path) -> PathBuf {
     PathBuf::from(crate::strip_verbatim_prefix(&resolved.to_string_lossy()))
+}
+
+/// Quoted `cmd.exe` argument for `start`. `cmd` re-parses its command line, so
+/// an unquoted `&` (a legal filename character) would split the command; the
+/// quotes keep the path one argument. Windows paths cannot contain `"`.
+#[cfg(target_os = "windows")]
+pub(crate) fn windows_start_argument(path: &Path) -> std::ffi::OsString {
+    std::ffi::OsString::from(format!("\"{}\"", path.display()))
 }
 
 /// Opens a resolved file with the OS default application, mirroring
@@ -76,10 +114,13 @@ pub fn open_with_default_app(path: &Path) -> Result<(), String> {
     let spawned = std::process::Command::new("open").arg(path).spawn();
 
     #[cfg(target_os = "windows")]
-    let spawned = crate::new_command("cmd")
-        .args(["/C", "start", ""])
-        .arg(path)
-        .spawn();
+    let spawned = {
+        use std::os::windows::process::CommandExt;
+        let mut command = crate::new_command("cmd");
+        command.args(["/C", "start", ""]);
+        command.raw_arg(windows_start_argument(path));
+        command.spawn()
+    };
 
     #[cfg(target_os = "linux")]
     let spawned = std::process::Command::new("xdg-open").arg(path).spawn();
@@ -168,115 +209,25 @@ pub fn watch_targets(project: &Path) -> Vec<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::grace::test_support::{
+        symlink_dir, symlink_file, write_contract, write_fixture_change as write_fixture_files,
+        TempDir,
+    };
+    use crate::grace::GRACE_FINGERPRINT_MEMO_SLACK_MS;
     use std::fs;
     use std::path::{Path, PathBuf};
-    use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::time::{SystemTime, UNIX_EPOCH};
 
     const CHANGE_ID: &str = "C-0019-retire-briefs";
 
-    struct TempDir {
-        path: PathBuf,
-    }
-
-    impl TempDir {
-        fn new(label: &str) -> TempDir {
-            static COUNTER: AtomicUsize = AtomicUsize::new(0);
-            let nanos = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos();
-            let path = std::env::temp_dir().join(format!(
-                "grace-fs-{label}-{}-{nanos}-{}",
-                std::process::id(),
-                COUNTER.fetch_add(1, Ordering::Relaxed)
-            ));
-            fs::create_dir_all(&path).unwrap();
-            TempDir { path }
-        }
-
-        fn path(&self) -> &Path {
-            &self.path
-        }
-    }
-
-    impl Drop for TempDir {
-        fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.path);
-        }
-    }
-
+    /// Writes the fixture change under a project root and returns its directory.
     fn write_fixture_change(root: &Path) -> PathBuf {
         let change = root
             .join(".grace5")
             .join("changes")
             .join("closed")
             .join(CHANGE_ID);
-        fs::create_dir_all(change.join("records")).unwrap();
-        fs::write(
-            change.join("contract.xml"),
-            include_bytes!("fixtures/C-0019-retire-briefs/contract.xml"),
-        )
-        .unwrap();
-        fs::write(
-            change.join("notes.md"),
-            include_bytes!("fixtures/C-0019-retire-briefs/notes.md"),
-        )
-        .unwrap();
-        for (name, bytes) in [
-            (
-                "approval-1.xml",
-                &include_bytes!("fixtures/C-0019-retire-briefs/records/approval-1.xml")[..],
-            ),
-            (
-                "run-1.xml",
-                &include_bytes!("fixtures/C-0019-retire-briefs/records/run-1.xml")[..],
-            ),
-            (
-                "run-3.xml",
-                &include_bytes!("fixtures/C-0019-retire-briefs/records/run-3.xml")[..],
-            ),
-            (
-                "review-1.xml",
-                &include_bytes!("fixtures/C-0019-retire-briefs/records/review-1.xml")[..],
-            ),
-            (
-                "close.xml",
-                &include_bytes!("fixtures/C-0019-retire-briefs/records/close.xml")[..],
-            ),
-            (
-                "brief-1.html",
-                &include_bytes!("fixtures/C-0019-retire-briefs/records/brief-1.html")[..],
-            ),
-        ] {
-            fs::write(change.join("records").join(name), bytes).unwrap();
-        }
+        write_fixture_files(&change);
         change
-    }
-
-    #[cfg(unix)]
-    fn symlink_file(target: &Path, link: &Path) -> std::io::Result<()> {
-        std::os::unix::fs::symlink(target, link)
-    }
-
-    #[cfg(windows)]
-    fn symlink_file(target: &Path, link: &Path) -> std::io::Result<()> {
-        std::os::windows::fs::symlink_file(target, link)
-    }
-
-    #[cfg(unix)]
-    fn symlink_dir(target: &Path, link: &Path) -> std::io::Result<()> {
-        std::os::unix::fs::symlink(target, link)
-    }
-
-    #[cfg(windows)]
-    fn symlink_dir(target: &Path, link: &Path) -> std::io::Result<()> {
-        std::os::windows::fs::symlink_dir(target, link)
-    }
-
-    fn write_contract(dir: &Path, src: &[u8]) {
-        fs::create_dir_all(dir).unwrap();
-        fs::write(dir.join("contract.xml"), src).unwrap();
     }
 
     #[test]
@@ -331,6 +282,48 @@ mod tests {
         assert!(file.truncated);
         assert_eq!(file.size_bytes, 1_500_000);
         assert_eq!(file.content.len(), 1024 * 1024);
+    }
+
+    #[test]
+    fn reports_text_truncation_for_notes() {
+        let dir = TempDir::new("notes-large");
+        let notes = dir.path().join("notes.md");
+        fs::write(&notes, vec![b'a'; MAX_READ_BYTES + 10]).unwrap();
+
+        let (text, truncated) = read_text_capped(&notes).expect("notes read");
+        assert!(truncated);
+        assert_eq!(text.len(), MAX_READ_BYTES);
+
+        let small = dir.path().join("small.md");
+        fs::write(&small, b"# notes").unwrap();
+        let (text, truncated) = read_text_capped(&small).expect("small notes read");
+        assert_eq!(text, "# notes");
+        assert!(!truncated);
+    }
+
+    #[test]
+    fn opens_only_explorer_file_extensions() {
+        for allowed in ["notes.md", "contract.xml", "brief.html", "run.log", "a.txt", "B.MD", "n.markdown"] {
+            assert!(
+                ensure_openable_extension(Path::new(allowed)).is_ok(),
+                "{allowed} should be openable"
+            );
+        }
+        for refused in ["run.exe", "script.ps1", "no-extension", "a.md.exe", "x.HTML.bat"] {
+            let error = ensure_openable_extension(Path::new(refused)).unwrap_err();
+            assert!(
+                error.contains("xml") && error.contains("log"),
+                "{refused}: {error}"
+            );
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn quotes_the_windows_start_argument() {
+        // cmd re-parses its command line; a bare `&` would split the command.
+        let argument = windows_start_argument(Path::new(r"C:\tmp\C-1&calc.txt"));
+        assert_eq!(argument.to_string_lossy(), r#""C:\tmp\C-1&calc.txt""#);
     }
 
     #[test]
@@ -636,6 +629,10 @@ mod tests {
         .expect("fixture change shows");
         let notes_md = detail.notes_md.expect("notes read");
         assert_eq!(notes_md.len(), 1024 * 1024);
+        assert!(
+            detail.notes_truncated,
+            "a capped notes.md must report truncation"
+        );
     }
 
     #[test]
@@ -665,15 +662,23 @@ mod tests {
     fn reports_grace_changes_once() {
         let dir = TempDir::new("changed");
         let path = dir.path().to_string_lossy().to_string();
+        // The fingerprint walk is memoised for ~1 s, so a mutation is observed on
+        // the first check after the memo expires (the real 1 s polling cadence).
+        let after_memo = || {
+            std::thread::sleep(
+                std::time::Duration::from_millis(1000 + GRACE_FINGERPRINT_MEMO_SLACK_MS),
+            );
+        };
 
         assert!(!check_changed(&path));
         fs::create_dir_all(dir.path().join(".grace5")).unwrap();
         fs::write(dir.path().join(".grace5").join("first.log"), b"x").unwrap();
+        after_memo();
         assert!(check_changed(&path));
         assert!(!check_changed(&path));
 
-        std::thread::sleep(std::time::Duration::from_millis(20));
         fs::write(dir.path().join(".grace5").join("second.log"), b"y").unwrap();
+        after_memo();
         assert!(check_changed(&path));
         assert!(!check_changed(&path));
     }

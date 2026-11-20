@@ -3,6 +3,7 @@
 //! Authorization and stage mirror the kernel (`grace5/src/contract.ts`,
 //! `grace5/src/state.ts`); the explorer never re-verifies verdicts.
 
+use std::collections::HashSet;
 use std::fmt::Write;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -20,6 +21,11 @@ const SUPPORTED_PIN: &str = "0.9.0";
 /// Kernel `state.ts` CLOSE_RECORD_MISSING.
 const CLOSE_RECORD_MISSING: &str =
     "records/close.xml is missing: a change under .grace5/changes/closed/ must carry it";
+
+/// Kernel `state.ts` duplicate-id location defect (also why the closed-side row
+/// is flagged when the same id exists open-side).
+const DUPLICATE_CHANGE: &str =
+    "the change exists under both .grace5/changes/ and .grace5/changes/closed/";
 
 /// SHA-256 of the raw contract bytes with only `\r\n` pairs read as `\n`
 /// (`authorization.md`; never decodes the bytes to a string first).
@@ -115,6 +121,10 @@ pub fn list(path: &Path) -> GraceListResult {
     let mut changes = Vec::new();
     if has_grace {
         let changes_dir = grace_dir.join("changes");
+        let canonical_grace = grace_dir.canonicalize().ok();
+        let canonical_changes = changes_dir.canonicalize().ok();
+        let mut open_ids: HashSet<String> = HashSet::new();
+
         for dir in subdirectories(&changes_dir) {
             let is_closed_dir = dir
                 .file_name()
@@ -125,12 +135,31 @@ pub fn list(path: &Path) -> GraceListResult {
                 continue;
             }
             if let Some(id) = change_id(&dir) {
-                changes.push(summarize_change(&id, &dir, false));
+                let mut location_defects = Vec::new();
+                if let Some(defect) =
+                    location_defect(canonical_grace.as_deref(), canonical_changes.as_deref(), &dir)
+                {
+                    location_defects.push(defect);
+                }
+                open_ids.insert(id.clone());
+                changes.push(summarize_change(&id, &dir, false, location_defects));
             }
         }
-        for dir in subdirectories(&changes_dir.join("closed")) {
+
+        let closed_dir = changes_dir.join("closed");
+        let canonical_closed = closed_dir.canonicalize().ok();
+        for dir in subdirectories(&closed_dir) {
             if let Some(id) = change_id(&dir) {
-                changes.push(summarize_change(&id, &dir, true));
+                let mut location_defects = Vec::new();
+                if open_ids.contains(&id) {
+                    location_defects.push(DUPLICATE_CHANGE.to_string());
+                }
+                if let Some(defect) =
+                    location_defect(canonical_grace.as_deref(), canonical_closed.as_deref(), &dir)
+                {
+                    location_defects.push(defect);
+                }
+                changes.push(summarize_change(&id, &dir, true, location_defects));
             }
         }
     }
@@ -221,24 +250,36 @@ struct ChangeParts {
     contract: Option<GraceContract>,
     contract_hash: Option<String>,
     contract_error: Option<String>,
-    location_error: Option<String>,
+    /// Location defects in kernel order (close record, duplicate, canonical
+    /// location); the first one is the summary's `malformed` when the contract
+    /// itself is fine.
+    location_defects: Vec<String>,
     records: Records,
     records_defects: Vec<String>,
 }
 
 /// Summary only, for the list path (no defects vector).
-pub(crate) fn summarize_change(id: &str, dir: &Path, in_closed_dir: bool) -> GraceChangeSummary {
-    summarize_parts(id, in_closed_dir, &read_parts(id, dir, in_closed_dir))
+pub(crate) fn summarize_change(
+    id: &str,
+    dir: &Path,
+    in_closed_dir: bool,
+    extra_location_defects: Vec<String>,
+) -> GraceChangeSummary {
+    summarize_parts(
+        id,
+        in_closed_dir,
+        &read_parts(id, dir, in_closed_dir, extra_location_defects),
+    )
 }
 
 /// Reads one change directory: contract bytes (hash + parse), records, and the
 /// structural defects in kernel order (contract, location, records).
 pub(crate) fn load_change(id: &str, dir: &Path, in_closed_dir: bool) -> ChangeLoad {
-    let parts = read_parts(id, dir, in_closed_dir);
+    let parts = read_parts(id, dir, in_closed_dir, Vec::new());
     let summary = summarize_parts(id, in_closed_dir, &parts);
     let mut defects = Vec::new();
     defects.extend(parts.contract_error.iter().cloned());
-    defects.extend(parts.location_error.iter().cloned());
+    defects.extend(parts.location_defects.iter().cloned());
     defects.extend(parts.records_defects.iter().cloned());
     ChangeLoad {
         summary,
@@ -248,19 +289,24 @@ pub(crate) fn load_change(id: &str, dir: &Path, in_closed_dir: bool) -> ChangeLo
     }
 }
 
-fn read_parts(id: &str, dir: &Path, in_closed_dir: bool) -> ChangeParts {
+fn read_parts(
+    id: &str,
+    dir: &Path,
+    in_closed_dir: bool,
+    extra_location_defects: Vec<String>,
+) -> ChangeParts {
     let (contract, contract_hash, contract_error) = read_contract(id, dir);
     let (records, records_defects) = parse_records(dir, id);
-    let location_error = if in_closed_dir && !records.close_exists {
-        Some(CLOSE_RECORD_MISSING.to_string())
-    } else {
-        None
-    };
+    let mut location_defects = Vec::new();
+    if in_closed_dir && !records.close_exists {
+        location_defects.push(CLOSE_RECORD_MISSING.to_string());
+    }
+    location_defects.extend(extra_location_defects);
     ChangeParts {
         contract,
         contract_hash,
         contract_error,
-        location_error,
+        location_defects,
         records,
         records_defects,
     }
@@ -274,7 +320,7 @@ fn summarize_parts(
     let malformed = parts
         .contract_error
         .clone()
-        .or_else(|| parts.location_error.clone())
+        .or_else(|| parts.location_defects.first().cloned())
         .or_else(|| parts.records_defects.first().cloned());
     summarize(
         id,
@@ -317,6 +363,40 @@ fn change_id(dir: &Path) -> Option<String> {
         .map(str::to_string)
 }
 
+/// The list-time counterpart of `grace_show`'s canonical containment check: a
+/// change directory reached through a symlink that resolves outside `.grace5`
+/// (or is not directly under its expected parent) is listed but flagged — the
+/// detail command refuses it, so the row must not look healthy.
+fn location_defect(
+    canonical_grace: Option<&Path>,
+    expected_parent: Option<&Path>,
+    dir: &Path,
+) -> Option<String> {
+    let (Some(root), Some(expected_parent)) = (canonical_grace, expected_parent) else {
+        return None;
+    };
+    let Ok(resolved) = dir.canonicalize() else {
+        return Some(format!(
+            "change directory cannot be resolved: {}",
+            dir.display()
+        ));
+    };
+    if !resolved.starts_with(root) {
+        return Some(format!(
+            "change directory resolves outside .grace5: {}",
+            dir.display()
+        ));
+    }
+    if resolved.parent() != Some(expected_parent) {
+        return Some(format!(
+            "change directory is not directly under {}: {}",
+            expected_parent.display(),
+            dir.display()
+        ));
+    }
+    None
+}
+
 fn subdirectories(dir: &Path) -> Vec<PathBuf> {
     let mut paths = Vec::new();
     if let Ok(entries) = fs::read_dir(dir) {
@@ -340,10 +420,10 @@ mod tests {
     use crate::grace::model::{
         GraceAffected, GraceCheck, GraceFinding, GraceReview, GraceRunResult,
     };
+    use crate::grace::test_support::{
+        symlink_dir, write_contract, write_fixture_change, TempDir,
+    };
     use std::fs;
-    use std::path::{Path, PathBuf};
-    use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::time::{SystemTime, UNIX_EPOCH};
 
     const KERNEL_VECTOR: &str = "475e960d00ca71cd5b021dd98fd95438fb267b1997d5375ef1313fcbbb168000";
     /// Byte-identical to `nonascii-src.xml` used to compute the expected hash.
@@ -354,37 +434,6 @@ mod tests {
 "#;
     const NON_ASCII_VECTOR: &str =
         "4dc679d68fb238b7e0fa19c63dc1a750966883d3fce2b7552c799fd4cdce3d48";
-
-    struct TempDir {
-        path: PathBuf,
-    }
-
-    impl TempDir {
-        fn new(label: &str) -> TempDir {
-            static COUNTER: AtomicUsize = AtomicUsize::new(0);
-            let nanos = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos();
-            let path = std::env::temp_dir().join(format!(
-                "grace-state-{label}-{}-{nanos}-{}",
-                std::process::id(),
-                COUNTER.fetch_add(1, Ordering::Relaxed)
-            ));
-            fs::create_dir_all(&path).unwrap();
-            TempDir { path }
-        }
-
-        fn path(&self) -> &Path {
-            &self.path
-        }
-    }
-
-    impl Drop for TempDir {
-        fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.path);
-        }
-    }
 
     fn empty_records() -> Records {
         Records {
@@ -504,48 +553,6 @@ mod tests {
             findings,
             adequacy: Vec::new(),
             rules: Vec::new(),
-        }
-    }
-
-    fn write_contract(dir: &Path, src: &[u8]) {
-        fs::create_dir_all(dir).unwrap();
-        fs::write(dir.join("contract.xml"), src).unwrap();
-    }
-
-    fn write_fixture_change(dir: &Path) {
-        fs::create_dir_all(dir.join("records")).unwrap();
-        fs::write(
-            dir.join("contract.xml"),
-            include_bytes!("fixtures/C-0019-retire-briefs/contract.xml"),
-        )
-        .unwrap();
-        for (name, bytes) in [
-            (
-                "approval-1.xml",
-                &include_bytes!("fixtures/C-0019-retire-briefs/records/approval-1.xml")[..],
-            ),
-            (
-                "run-1.xml",
-                &include_bytes!("fixtures/C-0019-retire-briefs/records/run-1.xml")[..],
-            ),
-            (
-                "run-3.xml",
-                &include_bytes!("fixtures/C-0019-retire-briefs/records/run-3.xml")[..],
-            ),
-            (
-                "review-1.xml",
-                &include_bytes!("fixtures/C-0019-retire-briefs/records/review-1.xml")[..],
-            ),
-            (
-                "close.xml",
-                &include_bytes!("fixtures/C-0019-retire-briefs/records/close.xml")[..],
-            ),
-            (
-                "brief-1.html",
-                &include_bytes!("fixtures/C-0019-retire-briefs/records/brief-1.html")[..],
-            ),
-        ] {
-            fs::write(dir.join("records").join(name), bytes).unwrap();
         }
     }
 
@@ -840,16 +847,6 @@ mod tests {
         );
     }
 
-    #[cfg(unix)]
-    fn symlink_dir(target: &Path, link: &Path) -> std::io::Result<()> {
-        std::os::unix::fs::symlink(target, link)
-    }
-
-    #[cfg(windows)]
-    fn symlink_dir(target: &Path, link: &Path) -> std::io::Result<()> {
-        std::os::windows::fs::symlink_dir(target, link)
-    }
-
     #[test]
     fn lists_a_change_directory_reached_through_a_symlink() {
         let dir = TempDir::new("symlinked-change");
@@ -876,6 +873,54 @@ mod tests {
                 .count(),
             1
         );
+        // Listed AND flagged: the resolved directory escapes .grace5, and the
+        // detail command refuses it — the row must not look healthy.
+        let entry = result
+            .changes
+            .iter()
+            .find(|change| change.id == "C-0050-symlinked")
+            .unwrap();
+        assert!(
+            entry
+                .malformed
+                .as_deref()
+                .unwrap_or_default()
+                .contains("outside .grace5"),
+            "{:?}",
+            entry.malformed
+        );
+    }
+
+    #[test]
+    fn flags_a_change_present_in_both_directories() {
+        let dir = TempDir::new("duplicate");
+        let changes = dir.path().join(".grace5").join("changes");
+        let contract = br#"<Contract id="C-0070-duplicate" revision="1" title="Duplicate"><Problem>p</Problem></Contract>"#;
+        write_contract(&changes.join("C-0070-duplicate"), contract);
+        let closed = changes.join("closed").join("C-0070-duplicate");
+        write_contract(&closed, contract);
+        fs::create_dir_all(closed.join("records")).unwrap();
+        fs::write(
+            closed.join("records").join("close.xml"),
+            br#"<Close change="C-0070-duplicate" revision="1" contract-sha256="x" date="2026-11-20" source-revision="a" candidate="b" start-revision="c" approval="approval-1.xml" review="1" kernel="grace5 0.9.0"/>"#,
+        )
+        .unwrap();
+
+        let result = list(dir.path());
+        let rows: Vec<_> = result
+            .changes
+            .iter()
+            .filter(|change| change.id == "C-0070-duplicate")
+            .collect();
+        // Malformed never hides a row: both sides stay listed.
+        assert_eq!(rows.len(), 2);
+        let closed_row = rows.iter().find(|change| change.in_closed_dir).expect("closed row");
+        assert_eq!(
+            closed_row.malformed.as_deref(),
+            Some("the change exists under both .grace5/changes/ and .grace5/changes/closed/")
+        );
+        let open_row = rows.iter().find(|change| !change.in_closed_dir).expect("open row");
+        assert!(open_row.malformed.is_none(), "{:?}", open_row.malformed);
     }
 
     #[test]

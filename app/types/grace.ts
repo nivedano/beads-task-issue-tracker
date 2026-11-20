@@ -13,6 +13,12 @@ export type GraceStage = 'prepared' | 'approved' | 'executing' | 'reviewed' | 'c
 /** Kernel-equivalent authorization verdict for the contract's current revision. */
 export type GraceAuthorization = 'unapproved' | 'approved' | 'rejected' | 'altered after approval'
 
+/** Sortable columns of the GRACE changes table. */
+export type GraceSortField = 'id' | 'title' | 'stage' | 'revision'
+
+/** Open/closed/all scope facet of the GRACE filters. */
+export type GraceScope = 'open' | 'closed' | 'all'
+
 export interface GraceItem {
   id: string
   text: string
@@ -248,6 +254,7 @@ export interface GraceChangeDetail {
   close: GraceClose | null
   briefs: GraceBrief[]
   notesMd: string | null
+  notesTruncated: boolean
   logDirs: number[]
   defects: string[]
   latestResults: GraceRunResult[]

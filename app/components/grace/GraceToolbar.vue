@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { GraceStage, GraceAuthorization } from '~/types/grace'
+import type { GraceStage, GraceAuthorization, GraceScope } from '~/types/grace'
 import type { ColumnConfig } from '~/types/issue'
 import { onClickOutside } from '@vueuse/core'
 import { Input } from '~/components/ui/input'
@@ -13,8 +13,6 @@ import {
 import StageFilterDropdown from '~/components/grace/StageFilterDropdown.vue'
 import AuthorizationFilterDropdown from '~/components/grace/AuthorizationFilterDropdown.vue'
 import ScopeFilterDropdown from '~/components/grace/ScopeFilterDropdown.vue'
-
-type GraceScope = 'open' | 'closed' | 'all'
 
 const search = defineModel<string>('search', { default: '' })
 
@@ -151,32 +149,35 @@ const configurableColumns = computed(() => props.columns.filter(col => col.id !=
       </div>
 
       <div class="relative">
-        <Tooltip>
-          <TooltipTrigger as-child>
-            <Button
-              ref="columnTriggerRef"
-              variant="outline"
-              size="icon"
-              class="h-8 w-8"
-              @click="isColumnPanelOpen = !isColumnPanelOpen"
-            >
-              <svg
-                class="w-3.5 h-3.5"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
+        <!-- The ref must be a plain element: a component ref has no `.contains`,
+             which broke onClickOutside's outside-click comparison. -->
+        <div ref="columnTriggerRef">
+          <Tooltip>
+            <TooltipTrigger as-child>
+              <Button
+                variant="outline"
+                size="icon"
+                class="h-8 w-8"
+                @click="isColumnPanelOpen = !isColumnPanelOpen"
               >
-                <rect x="3" y="3" width="7" height="7" />
-                <rect x="14" y="3" width="7" height="7" />
-                <rect x="14" y="14" width="7" height="7" />
-                <rect x="3" y="14" width="7" height="7" />
-              </svg>
-              <span class="sr-only">Column settings</span>
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>Column settings</TooltipContent>
-        </Tooltip>
+                <svg
+                  class="w-3.5 h-3.5"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <rect x="3" y="3" width="7" height="7" />
+                  <rect x="14" y="3" width="7" height="7" />
+                  <rect x="14" y="14" width="7" height="7" />
+                  <rect x="3" y="14" width="7" height="7" />
+                </svg>
+                <span class="sr-only">Column settings</span>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Column settings</TooltipContent>
+          </Tooltip>
+        </div>
 
         <div
           v-if="isColumnPanelOpen"
