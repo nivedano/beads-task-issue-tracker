@@ -1,6 +1,7 @@
 //! Safe reads, fingerprints and watch targets for a project's `.grace5/`.
 
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
@@ -8,6 +9,29 @@ use crate::grace::model::GraceFileContent;
 
 /// `read_grace_file` never returns more than one MiB of decoded text.
 pub const MAX_READ_BYTES: usize = 1024 * 1024;
+
+/// Reads at most `MAX_READ_BYTES` from a file without loading the rest of it.
+fn capped_bytes(path: &Path) -> std::io::Result<(Vec<u8>, bool, u64)> {
+    let file = fs::File::open(path)?;
+    let metadata = file.metadata()?;
+    if !metadata.is_file() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "not a file",
+        ));
+    }
+    let size = metadata.len();
+    let mut buffer = Vec::with_capacity(size.min(MAX_READ_BYTES as u64) as usize);
+    file.take(MAX_READ_BYTES as u64).read_to_end(&mut buffer)?;
+    Ok((buffer, size > MAX_READ_BYTES as u64, size))
+}
+
+/// Lossy UTF-8 text under the same cap; `None` when the file cannot be read.
+pub(crate) fn read_text_capped(path: &Path) -> Option<String> {
+    capped_bytes(path)
+        .ok()
+        .map(|(bytes, _, _)| String::from_utf8_lossy(&bytes).into_owned())
+}
 
 /// Reads a file inside `<project>/.grace5/`, refusing anything that resolves
 /// outside it (traversal, absolute paths, symlink escapes).
@@ -23,30 +47,26 @@ pub fn read_grace_file(project: &Path, rel_path: &str) -> Result<GraceFileConten
     if !resolved.starts_with(&root) {
         return Err(format!("{rel_path} is outside .grace5"));
     }
-    let metadata = fs::metadata(&resolved)
-        .map_err(|error| format!("Cannot read {rel_path}: {error}"))?;
-    if !metadata.is_file() {
-        return Err(format!("{rel_path} is not a file"));
-    }
-    let bytes = fs::read(&resolved).map_err(|error| format!("Cannot read {rel_path}: {error}"))?;
-    let truncated = bytes.len() > MAX_READ_BYTES;
-    let slice = &bytes[..bytes.len().min(MAX_READ_BYTES)];
+    let (bytes, truncated, size_bytes) =
+        capped_bytes(&resolved).map_err(|error| format!("Cannot read {rel_path}: {error}"))?;
     Ok(GraceFileContent {
-        content: String::from_utf8_lossy(slice).into_owned(),
+        content: String::from_utf8_lossy(&bytes).into_owned(),
         truncated,
-        size_bytes: metadata.len(),
+        size_bytes,
     })
 }
 
-/// Newest mtime and file count over the `.grace5` tree; `None` without `.grace5`.
+/// Newest mtime (files and directories) and file count over `.grace5`;
+/// `None` without `.grace5`. Symlinked directories are not followed (loop
+/// safety), so a symlink counts as a file.
 pub fn grace_fingerprint(project: &Path) -> Option<(SystemTime, u64)> {
     let root = project.join(".grace5");
     if !root.is_dir() {
         return None;
     }
-    let mut newest: Option<SystemTime> = None;
+    let mut newest = modified_time(&root);
     let mut count = 0u64;
-    let mut stack = vec![root.clone()];
+    let mut stack = vec![root];
     while let Some(dir) = stack.pop() {
         let entries = match fs::read_dir(&dir) {
             Ok(entries) => entries,
@@ -58,25 +78,33 @@ pub fn grace_fingerprint(project: &Path) -> Option<(SystemTime, u64)> {
                 Ok(metadata) => metadata,
                 Err(_) => continue,
             };
+            newest = newest_of(newest, metadata.modified().ok());
             if metadata.is_dir() {
                 stack.push(path);
             } else {
                 count += 1;
-                if let Ok(modified) = metadata.modified() {
-                    newest = Some(match newest {
-                        Some(current) if current > modified => current,
-                        _ => modified,
-                    });
-                }
             }
         }
     }
-    if newest.is_none() {
-        newest = fs::metadata(&root)
-            .ok()
-            .and_then(|metadata| metadata.modified().ok());
-    }
     newest.map(|time| (time, count))
+}
+
+fn modified_time(path: &Path) -> Option<SystemTime> {
+    fs::metadata(path)
+        .ok()
+        .and_then(|metadata| metadata.modified().ok())
+}
+
+fn newest_of(current: Option<SystemTime>, candidate: Option<SystemTime>) -> Option<SystemTime> {
+    match (current, candidate) {
+        (Some(current), Some(candidate)) => Some(if candidate > current {
+            candidate
+        } else {
+            current
+        }),
+        (current, None) => current,
+        (None, candidate) => candidate,
+    }
 }
 
 /// The registries present at a project root, in a stable order.
@@ -188,6 +216,11 @@ mod tests {
     #[cfg(windows)]
     fn symlink_file(target: &Path, link: &Path) -> std::io::Result<()> {
         std::os::windows::fs::symlink_file(target, link)
+    }
+
+    fn write_contract(dir: &Path, src: &[u8]) {
+        fs::create_dir_all(dir).unwrap();
+        fs::write(dir.join("contract.xml"), src).unwrap();
     }
 
     #[test]
@@ -352,19 +385,88 @@ mod tests {
     }
 
     #[test]
+    fn refuses_unsafe_change_ids() {
+        let dir = TempDir::new("ids");
+        write_contract(
+            &dir.path().join(".grace5").join("changes").join("C-0001-safe"),
+            br#"<Contract id="C-0001-safe" revision="1" title="Safe"><Problem>p</Problem></Contract>"#,
+        );
+        let project = dir.path().to_string_lossy().to_string();
+        let absolute = project.clone();
+        for id in [
+            "",
+            ".",
+            "..",
+            "../..",
+            "../../..",
+            "../C-0001-safe",
+            "closed/C-0001-safe",
+            "..\\..",
+            absolute.as_str(),
+        ] {
+            assert!(
+                crate::grace::grace_show(project.clone(), id.to_string()).is_err(),
+                "id {id:?} must be refused"
+            );
+        }
+        assert!(crate::grace::grace_show(project, "C-0001-safe".to_string()).is_ok());
+    }
+
+    #[test]
+    fn caps_the_notes_markdown() {
+        let dir = TempDir::new("notes-cap");
+        write_fixture_change(dir.path());
+        let notes = dir
+            .path()
+            .join(".grace5/changes/closed/C-0019-retire-briefs/notes.md");
+        fs::write(&notes, vec![b'n'; 1_500_000]).unwrap();
+
+        let detail = crate::grace::grace_show(
+            dir.path().to_string_lossy().to_string(),
+            CHANGE_ID.to_string(),
+        )
+        .expect("fixture change shows");
+        let notes_md = detail.notes_md.expect("notes read");
+        assert_eq!(notes_md.len(), 1024 * 1024);
+    }
+
+    #[test]
+    fn fingerprints_directory_renames() {
+        let dir = TempDir::new("fingerprint-rename");
+        let grace = dir.path().join(".grace5");
+        fs::create_dir_all(grace.join("sub")).unwrap();
+        fs::write(grace.join("sub").join("a.log"), b"data").unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        let before = grace_fingerprint(dir.path()).expect("fingerprint before the rename");
+
+        fs::rename(
+            grace.join("sub").join("a.log"),
+            grace.join("sub").join("b.log"),
+        )
+        .unwrap();
+        let after = grace_fingerprint(dir.path()).expect("fingerprint after the rename");
+        assert_ne!(before, after, "a pure rename must change the fingerprint");
+    }
+
+    fn check_changed(path: &str) -> bool {
+        tauri::async_runtime::block_on(crate::grace::grace_check_changed(path.to_string()))
+            .expect("check_changed resolves")
+    }
+
+    #[test]
     fn reports_grace_changes_once() {
         let dir = TempDir::new("changed");
         let path = dir.path().to_string_lossy().to_string();
 
-        assert!(!crate::grace::grace_check_changed(path.clone()).unwrap());
+        assert!(!check_changed(&path));
         fs::create_dir_all(dir.path().join(".grace5")).unwrap();
         fs::write(dir.path().join(".grace5").join("first.log"), b"x").unwrap();
-        assert!(crate::grace::grace_check_changed(path.clone()).unwrap());
-        assert!(!crate::grace::grace_check_changed(path.clone()).unwrap());
+        assert!(check_changed(&path));
+        assert!(!check_changed(&path));
 
         std::thread::sleep(std::time::Duration::from_millis(20));
         fs::write(dir.path().join(".grace5").join("second.log"), b"y").unwrap();
-        assert!(crate::grace::grace_check_changed(path.clone()).unwrap());
-        assert!(!crate::grace::grace_check_changed(path.clone()).unwrap());
+        assert!(check_changed(&path));
+        assert!(!check_changed(&path));
     }
 }

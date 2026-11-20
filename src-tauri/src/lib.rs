@@ -191,17 +191,13 @@ fn watcher_min_emit_interval() -> Duration {
     Duration::from_millis(*WATCHER_MIN_EMIT_INTERVAL_MS)
 }
 
-fn should_process_watcher_event(event: &notify_debouncer_mini::DebouncedEvent) -> bool {
-    if !matches!(event.kind, DebouncedEventKind::Any | DebouncedEventKind::AnyContinuous) {
+fn is_watched_path(path: &std::path::Path) -> bool {
+    let path = path.to_string_lossy().replace('\\', "/").to_lowercase();
+    if !(path.contains("/.beads/") || path.contains("/.grace5/")) {
         return false;
     }
 
-    let path = event.path.to_string_lossy().replace('\\', "/").to_lowercase();
-    if !path.contains("/.beads/") {
-        return false;
-    }
-
-    // Ignore high-churn internal files that do not carry issue data.
+    // Ignore high-churn internal files that do not carry registry data.
     !(path.contains("/.beads/.dolt/stats/")
         || path.contains("/.beads/.dolt/tmp/")
         || path.contains("/.beads/.dolt/.tmp/")
@@ -209,6 +205,14 @@ fn should_process_watcher_event(event: &notify_debouncer_mini::DebouncedEvent) -
         || path.ends_with(".tmp")
         || path.ends_with(".swp")
         || path.ends_with('~'))
+}
+
+fn should_process_watcher_event(event: &notify_debouncer_mini::DebouncedEvent) -> bool {
+    if !matches!(event.kind, DebouncedEventKind::Any | DebouncedEventKind::AnyContinuous) {
+        return false;
+    }
+
+    is_watched_path(&event.path)
 }
 
 fn emit_beads_changed(app_handle: &tauri::AppHandle, project_path: &str) {
@@ -5354,6 +5358,30 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    fn watched_path(path: &str) -> bool {
+        is_watched_path(std::path::Path::new(path))
+    }
+
+    #[test]
+    fn watcher_accepts_beads_events() {
+        assert!(watched_path("C:/repo/.beads/issues.jsonl"));
+        assert!(watched_path(r"C:\repo\.beads\issues.jsonl"));
+    }
+
+    #[test]
+    fn watcher_accepts_grace_events() {
+        assert!(watched_path("C:/repo/.grace5/changes/C-0019/contract.xml"));
+        assert!(watched_path("C:/repo/.grace5/kernel-version"));
+    }
+
+    #[test]
+    fn watcher_rejects_unrelated_events() {
+        assert!(!watched_path("C:/repo/src/main.rs"));
+        assert!(!watched_path("C:/repo/.grace5x/contract.xml"));
+        assert!(!watched_path("C:/repo/.beads/issues.jsonl.lock"));
+        assert!(!watched_path("C:/repo/notes.md"));
+    }
+
     /// A bare drive letter must resolve to the drive root, not to the process'
     /// current directory on that drive.
     #[test]
@@ -5371,6 +5399,13 @@ mod tests {
             assert!(
                 !root.path.starts_with(r"\\?\"),
                 "root carries verbatim prefix: {}",
+                root.path
+            );
+            // The grace flag must reflect the filesystem for every root.
+            assert_eq!(
+                root.has_grace,
+                std::path::Path::new(&root.path).join(".grace5").is_dir(),
+                "has_grace disagrees with the filesystem for {}",
                 root.path
             );
             // Every sidebar entry must be something fs_list can open.

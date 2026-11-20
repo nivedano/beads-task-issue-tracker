@@ -4,7 +4,7 @@
 //! and never writes to it.
 
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::{LazyLock, Mutex};
 use std::time::SystemTime;
 
@@ -33,25 +33,14 @@ pub fn grace_list(path: String) -> Result<GraceListResult, String> {
 #[command]
 pub fn grace_show(path: String, id: String) -> Result<GraceChangeDetail, String> {
     let project = PathBuf::from(&path);
-    let changes = project.join(".grace5").join("changes");
-    let open = changes.join(&id);
-    let closed = changes.join("closed").join(&id);
-    let (dir, in_closed_dir) = if open.is_dir() {
-        (open, false)
-    } else if closed.is_dir() {
-        (closed, true)
-    } else {
-        return Err(format!("Unknown GRACE change: {id}"));
-    };
+    let (dir, in_closed_dir) = change_dir(&project, &id)?;
     let relative = if in_closed_dir {
         format!(".grace5/changes/closed/{id}")
     } else {
         format!(".grace5/changes/{id}")
     };
     let load = state::load_change(&id, &dir, in_closed_dir);
-    let notes_md = std::fs::read(dir.join("notes.md"))
-        .ok()
-        .map(|bytes| String::from_utf8_lossy(&bytes).into_owned());
+    let notes_md = fs::read_text_capped(&dir.join("notes.md"));
     let latest_results = latest_results(load.contract.as_ref(), &load.records.runs);
     Ok(GraceChangeDetail {
         summary: load.summary,
@@ -77,7 +66,7 @@ pub fn grace_read_file(path: String, rel_path: String) -> Result<GraceFileConten
 
 /// Whether the project's `.grace5` tree changed since the previous call.
 #[command]
-pub fn grace_check_changed(path: String) -> Result<bool, String> {
+pub async fn grace_check_changed(path: String) -> Result<bool, String> {
     let current = fs::grace_fingerprint(Path::new(&path));
     let mut fingerprints = GRACE_LAST_FINGERPRINT
         .lock()
@@ -109,16 +98,55 @@ fn latest_results(contract: Option<&GraceContract>, runs: &[GraceRun]) -> Vec<Gr
     contract
         .checks
         .iter()
-        .filter_map(|check| {
-            runs.iter()
-                .filter_map(|run| {
-                    run.results
-                        .iter()
-                        .find(|result| result.check == check.id)
-                        .map(|result| (run.n, result))
-                })
-                .max_by_key(|(n, _)| *n)
-                .map(|(_, result)| result.clone())
-        })
+        .filter_map(|check| state::latest_result(&check.id, runs).cloned())
         .collect()
+}
+
+/// Resolves a change id to its directory, refusing anything that is not one
+/// normal path component inside `changes/` or `changes/closed/`.
+fn change_dir(project: &Path, id: &str) -> Result<(PathBuf, bool), String> {
+    validate_change_id(id)?;
+    let changes = project.join(".grace5").join("changes");
+    let canonical_changes = changes
+        .canonicalize()
+        .map_err(|error| format!("Cannot resolve .grace5/changes: {error}"))?;
+    let closed = changes.join("closed");
+    let canonical_closed = closed.canonicalize().ok();
+    for (in_closed_dir, candidate, expected_parent) in [
+        (false, changes.join(id), Some(canonical_changes)),
+        (true, closed.join(id), canonical_closed),
+    ] {
+        let Some(expected_parent) = expected_parent else {
+            continue;
+        };
+        if !candidate.is_dir() {
+            continue;
+        }
+        let Ok(resolved) = candidate.canonicalize() else {
+            continue;
+        };
+        if resolved.parent() != Some(expected_parent.as_path()) {
+            continue;
+        }
+        return Ok((resolved, in_closed_dir));
+    }
+    Err(format!("Unknown GRACE change: {id}"))
+}
+
+fn validate_change_id(id: &str) -> Result<(), String> {
+    let invalid = || format!("Invalid GRACE change id: {id}");
+    if id.is_empty() || id.contains('/') || id.contains('\\') || id.contains('\0') {
+        return Err(invalid());
+    }
+    let mut components = Path::new(id).components();
+    let single_normal = match components.next() {
+        Some(Component::Normal(name)) => {
+            name == std::ffi::OsStr::new(id) && components.next().is_none()
+        }
+        _ => false,
+    };
+    if !single_normal {
+        return Err(invalid());
+    }
+    Ok(())
 }

@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use sha2::{Digest, Sha256};
 
 use crate::grace::model::{
-    GraceApproval, GraceChangeSummary, GraceContract, GraceListResult, GraceRun,
+    GraceApproval, GraceChangeSummary, GraceContract, GraceListResult, GraceRun, GraceRunResult,
 };
 use crate::grace::parse::{parse_contract, parse_records, Records};
 
@@ -125,12 +125,12 @@ pub fn list(path: &Path) -> GraceListResult {
                 continue;
             }
             if let Some(id) = change_id(&dir) {
-                changes.push(load_change(&id, &dir, false).summary);
+                changes.push(summarize_change(&id, &dir, false));
             }
         }
         for dir in subdirectories(&changes_dir.join("closed")) {
             if let Some(id) = change_id(&dir) {
-                changes.push(load_change(&id, &dir, true).summary);
+                changes.push(summarize_change(&id, &dir, true));
             }
         }
     }
@@ -172,7 +172,22 @@ fn stage(records: &Records, authorization: &str) -> &'static str {
     }
 }
 
-/// Kernel `checkState`: the highest-numbered run containing a check decides it.
+/// Kernel `checkState`: the highest-numbered run containing the check decides it.
+pub(crate) fn latest_result<'a>(
+    check: &str,
+    runs: &'a [GraceRun],
+) -> Option<&'a GraceRunResult> {
+    runs.iter()
+        .filter_map(|run| {
+            run.results
+                .iter()
+                .find(|result| result.check == check)
+                .map(|result| (run.n, result))
+        })
+        .max_by_key(|(n, _)| *n)
+        .map(|(_, result)| result)
+}
+
 fn counts(contract: Option<&GraceContract>, runs: &[GraceRun]) -> (u32, u32) {
     let Some(contract) = contract else {
         return (0, 0);
@@ -184,17 +199,10 @@ fn counts(contract: Option<&GraceContract>, runs: &[GraceRun]) -> (u32, u32) {
         .collect();
     let mut passed = 0;
     for check in &required {
-        let latest = runs
-            .iter()
-            .filter_map(|run| {
-                run.results
-                    .iter()
-                    .find(|result| result.check == check.id)
-                    .map(|result| (run.n, result))
-            })
-            .max_by_key(|(n, _)| *n)
-            .map(|(_, result)| result);
-        if latest.map(|result| result.verdict == "passed").unwrap_or(false) {
+        if latest_result(&check.id, runs)
+            .map(|result| result.verdict == "passed")
+            .unwrap_or(false)
+        {
             passed += 1;
         }
     }
@@ -209,9 +217,38 @@ pub(crate) struct ChangeLoad {
     pub defects: Vec<String>,
 }
 
+struct ChangeParts {
+    contract: Option<GraceContract>,
+    contract_hash: Option<String>,
+    contract_error: Option<String>,
+    location_error: Option<String>,
+    records: Records,
+    records_defects: Vec<String>,
+}
+
+/// Summary only, for the list path (no defects vector).
+pub(crate) fn summarize_change(id: &str, dir: &Path, in_closed_dir: bool) -> GraceChangeSummary {
+    summarize_parts(id, in_closed_dir, &read_parts(id, dir, in_closed_dir))
+}
+
 /// Reads one change directory: contract bytes (hash + parse), records, and the
 /// structural defects in kernel order (contract, location, records).
 pub(crate) fn load_change(id: &str, dir: &Path, in_closed_dir: bool) -> ChangeLoad {
+    let parts = read_parts(id, dir, in_closed_dir);
+    let summary = summarize_parts(id, in_closed_dir, &parts);
+    let mut defects = Vec::new();
+    defects.extend(parts.contract_error.iter().cloned());
+    defects.extend(parts.location_error.iter().cloned());
+    defects.extend(parts.records_defects.iter().cloned());
+    ChangeLoad {
+        summary,
+        contract: parts.contract,
+        records: parts.records,
+        defects,
+    }
+}
+
+fn read_parts(id: &str, dir: &Path, in_closed_dir: bool) -> ChangeParts {
     let (contract, contract_hash, contract_error) = read_contract(id, dir);
     let (records, records_defects) = parse_records(dir, id);
     let location_error = if in_closed_dir && !records.close_exists {
@@ -219,31 +256,34 @@ pub(crate) fn load_change(id: &str, dir: &Path, in_closed_dir: bool) -> ChangeLo
     } else {
         None
     };
-    let mut defects = Vec::new();
-    if let Some(error) = contract_error.clone() {
-        defects.push(error);
+    ChangeParts {
+        contract,
+        contract_hash,
+        contract_error,
+        location_error,
+        records,
+        records_defects,
     }
-    if let Some(error) = location_error.clone() {
-        defects.push(error);
-    }
-    defects.extend(records_defects.iter().cloned());
-    let malformed = contract_error
-        .or(location_error)
-        .or_else(|| records_defects.into_iter().next());
-    let summary = summarize(
+}
+
+fn summarize_parts(
+    id: &str,
+    in_closed_dir: bool,
+    parts: &ChangeParts,
+) -> GraceChangeSummary {
+    let malformed = parts
+        .contract_error
+        .clone()
+        .or_else(|| parts.location_error.clone())
+        .or_else(|| parts.records_defects.first().cloned());
+    summarize(
         id,
         in_closed_dir,
-        contract.as_ref(),
-        contract_hash.as_deref(),
-        &records,
+        parts.contract.as_ref(),
+        parts.contract_hash.as_deref(),
+        &parts.records,
         malformed,
-    );
-    ChangeLoad {
-        summary,
-        contract,
-        records,
-        defects,
-    }
+    )
 }
 
 fn read_contract(
