@@ -29,6 +29,8 @@ const props = defineProps<{
   sortDirection: 'asc' | 'desc'
   isLoading: boolean
   pinWarning: string | null
+  /** Optional: a failed list fetch (the list would otherwise look empty). */
+  error?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -110,6 +112,25 @@ const handleSort = (field: GraceSortField, direction: 'asc' | 'desc') => {
         <line x1="12" y1="17" x2="12.01" y2="17" />
       </svg>
       <span>{{ pinWarning }}</span>
+    </div>
+
+    <!-- A failed list fetch must not read as "0 changes". -->
+    <div
+      v-if="error"
+      class="flex items-start gap-2 rounded border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive"
+    >
+      <svg
+        class="w-3.5 h-3.5 mt-0.5 shrink-0"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+      >
+        <circle cx="12" cy="12" r="10" />
+        <line x1="12" y1="8" x2="12" y2="12" />
+        <line x1="12" y1="16" x2="12.01" y2="16" />
+      </svg>
+      <span>Could not load GRACE changes: {{ error }}</span>
     </div>
 
     <GraceToolbar

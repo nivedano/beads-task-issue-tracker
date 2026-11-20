@@ -50,10 +50,14 @@ const isLoading = ref(false)
 const error = ref<string | null>(null)
 const crumbBar = ref<HTMLElement | null>(null)
 
-// Native OS folder dialog is desktop-only; resolved after mount so SSR stays stable.
+// Native OS folder dialog and the GRACE registry are desktop-only; resolved
+// after mount so SSR stays stable and web mode never advertises a project kind
+// it cannot load (probeProjectCapabilities reports hasGrace:false on web).
 const canBrowseNative = ref(false)
+const isDesktop = ref(false)
 onMounted(() => {
-  canBrowseNative.value = isTauri()
+  isDesktop.value = isTauri()
+  canBrowseNative.value = isDesktop.value
 })
 
 // Watch for dialog open to load initial path
@@ -205,9 +209,9 @@ const isCurrentProject = computed(() => isProject(currentPath.value))
   <Dialog :open="open" @update:open="$emit('update:open', $event)">
     <DialogContent class="flex flex-col overflow-hidden" :style="dialogStyle">
       <DialogHeader class="shrink-0">
-        <DialogTitle>Select Beads Project Folder</DialogTitle>
+        <DialogTitle>Select Project Folder</DialogTitle>
         <DialogDescription>
-          Navigate to a folder containing a Beads database (.beads folder)
+          Navigate to a folder containing a GRACE (.grace5) or beads (.beads) registry
         </DialogDescription>
       </DialogHeader>
 
@@ -383,7 +387,7 @@ const isCurrentProject = computed(() => isProject(currentPath.value))
                 <Badge v-if="hasBeads" class="bg-green-600 text-white shrink-0">
                   Beads Project
                 </Badge>
-                <Badge v-if="hasGrace" variant="outline" class="text-violet-500 border-violet-500/50 shrink-0">
+                <Badge v-if="hasGrace && isDesktop" variant="outline" class="text-violet-500 border-violet-500/50 shrink-0">
                   GRACE
                 </Badge>
                 <Badge v-if="usesDolt" variant="outline" class="text-[#29E3C1] border-[#29E3C1]/50 shrink-0 px-2 py-1">
@@ -442,7 +446,7 @@ const isCurrentProject = computed(() => isProject(currentPath.value))
                   <Badge v-if="entry.hasBeads" variant="outline" class="text-green-500 border-green-500/50 text-xs">
                     beads
                   </Badge>
-                  <Badge v-if="entry.hasGrace" variant="outline" class="text-violet-500 border-violet-500/50 text-xs">
+                  <Badge v-if="entry.hasGrace && isDesktop" variant="outline" class="text-violet-500 border-violet-500/50 text-xs">
                     grace
                   </Badge>
                   <Badge v-if="entry.usesDolt" variant="outline" class="text-[#29E3C1] border-[#29E3C1]/50 text-xs px-1.5 py-0.5">
@@ -480,8 +484,9 @@ const isCurrentProject = computed(() => isProject(currentPath.value))
           Open
         </Button>
 
-        <!-- If not a project yet, show "Add Project" button (disabled without any registry) -->
-        <Button v-else :disabled="!hasBeads && !hasGrace" @click="handleAddProject">
+        <!-- If not a project yet, show "Add Project" button (disabled without an
+             accessible registry; GRACE is desktop-only) -->
+        <Button v-else :disabled="!hasBeads && !(hasGrace && isDesktop)" @click="handleAddProject">
           <svg
             class="w-4 h-4 mr-2"
             viewBox="0 0 24 24"

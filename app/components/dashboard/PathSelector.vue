@@ -31,14 +31,24 @@ const scannedProjectPaths = new Set<string>()
 // be skipped entirely instead of being treated as a broken beads project.
 const projectCapabilities = ref<Record<string, { hasBeads: boolean; hasGrace: boolean }>>({})
 
+async function capabilitiesFor(path: string): Promise<{ hasBeads: boolean; hasGrace: boolean }> {
+  // `.` is the legacy default path (see index.vue's probeCapabilities): probing
+  // it is meaningless, and treating it as a beads project keeps the count badge
+  // working for default-path users.
+  if (path === '.') return { hasBeads: true, hasGrace: false }
+
+  const cached = projectCapabilities.value[path]
+  if (cached) return cached
+
+  const caps = await probeProjectCapabilities(path)
+  projectCapabilities.value[path] = caps
+  return caps
+}
+
 async function scanProjectIssueCounts(path: string) {
   scannedProjectPaths.add(path)
   try {
-    let caps = projectCapabilities.value[path]
-    if (!caps) {
-      caps = await probeProjectCapabilities(path)
-      projectCapabilities.value[path] = caps
-    }
+    const caps = await capabilitiesFor(path)
 
     if (!caps.hasBeads) {
       // Grace-only (or no registry): no bd CLI, no git — the row shows a GRACE/

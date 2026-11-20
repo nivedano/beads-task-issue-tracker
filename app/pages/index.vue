@@ -238,9 +238,9 @@ const handleOnboardingFolderSelect = async (path: string) => {
     await fetchGraceChanges(path)
   }
 
-  // A grace-only project admitted from onboarding gets the same live refresh as
-  // one opened through the project switcher. Beads-only onboarding is unchanged.
-  if (import.meta.client && !caps.value.hasBeads && caps.value.hasGrace) {
+  // A project admitted from onboarding gets the same live refresh as one opened
+  // through the project switcher: the Rust watcher covers `.beads` and `.grace5`.
+  if (import.meta.client && (caps.value.hasBeads || caps.value.hasGrace)) {
     startListening(path)
     startPolling()
   }
@@ -273,7 +273,10 @@ const mobilePanel = ref<'dashboard' | 'issues' | 'grace' | 'details'>('issues')
 /** Switch the center explorer tab; on mobile keep the panel in step with it. */
 const selectExplorerTab = (tab: 'issues' | 'grace') => {
   explorerTabStorage.value = tab
-  if (!isMobileView.value || !caps.value.hasBeads || !caps.value.hasGrace) return
+  if (!isMobileView.value) return
+  // Unconditional: with a single registry `resolveExplorerTab` decides the
+  // content, but the panel must still leave Dashboard/Details for the explorer
+  // (otherwise the nav button is a dead end in the most common deployment).
   mobilePanel.value = tab === 'grace' ? 'grace' : 'issues'
 }
 
@@ -1322,6 +1325,7 @@ watch(
             :sort-direction="graceSort.direction"
             :is-loading="graceLoading"
             :pin-warning="gracePinWarning"
+            :error="graceError"
             @update:filters="handleGraceFiltersUpdate"
             @select="handleSelectChange"
             @sort="handleGraceSort"
@@ -1589,6 +1593,7 @@ watch(
           :sort-direction="graceSort.direction"
           :is-loading="graceLoading"
           :pin-warning="gracePinWarning"
+          :error="graceError"
           @update:filters="handleGraceFiltersUpdate"
           @select="handleSelectChange"
           @sort="handleGraceSort"

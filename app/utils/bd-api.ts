@@ -819,16 +819,28 @@ export async function fsExists(path: string): Promise<boolean> {
  * comes from `fsList`; GRACE is desktop-only and reported absent.
  */
 export async function probeProjectCapabilities(path: string): Promise<{ hasBeads: boolean; hasGrace: boolean }> {
-  if (!isTauri()) {
-    const { hasBeads } = await fsList(path)
-    return { hasBeads, hasGrace: false }
+  const probe = async (): Promise<{ hasBeads: boolean; hasGrace: boolean }> => {
+    if (!isTauri()) {
+      const { hasBeads } = await fsList(path)
+      return { hasBeads, hasGrace: false }
+    }
+
+    const [hasBeads, hasGrace] = await Promise.all([
+      fsExists(joinPath(path, '.beads')),
+      fsExists(joinPath(path, '.grace5')),
+    ])
+    return { hasBeads, hasGrace }
   }
 
-  const [hasBeads, hasGrace] = await Promise.all([
-    fsExists(joinPath(path, '.beads')),
-    fsExists(joinPath(path, '.grace5')),
-  ])
-  return { hasBeads, hasGrace }
+  try {
+    return await probe()
+  } catch {
+    // The Tauri backend or web server may still be warming up right after
+    // launch. Retry once (same pattern as useFavorites' fsExistsWithRetry)
+    // before letting callers fall back to "no registries".
+    await new Promise(resolve => setTimeout(resolve, 500))
+    return await probe()
+  }
 }
 
 // ============================================================================
