@@ -280,6 +280,14 @@ const editId = computed(() => {
   return undefined
 })
 
+/**
+ * Shared class for the rows that must line up exactly: the dashboard sidebar
+ * header and the center explorer tab strip. One explicit height (32px, bottom
+ * border included) replaces the padding-driven rows, which rendered 48px/46px;
+ * `shrink-0` keeps the height from being squeezed by the panels below.
+ */
+const TOP_ROW_CLASS = 'h-8 shrink-0'
+
 // Mobile state
 const isMobileView = ref(false)
 const mobilePanel = ref<'dashboard' | 'issues' | 'grace' | 'details'>('issues')
@@ -1214,14 +1222,14 @@ watch(
           @mousedown="startResizeLeft"
         />
         <!-- Sidebar toggle -->
-        <div class="p-2 border-b border-border flex items-center" :class="isLeftSidebarOpen ? 'justify-between' : 'justify-center'">
+        <div class="px-2 border-b border-border flex items-center" :class="[TOP_ROW_CLASS, isLeftSidebarOpen ? 'justify-between' : 'justify-center']">
           <span v-if="isLeftSidebarOpen" class="text-sm font-medium px-2">Dashboard</span>
           <Tooltip>
             <TooltipTrigger as-child>
               <Button
                 variant="ghost"
                 size="icon"
-                class="h-8 w-8"
+                class="h-7 w-7"
                 @click="isLeftSidebarOpen = !isLeftSidebarOpen"
               >
                 <svg
@@ -1323,16 +1331,16 @@ watch(
 
         <!-- Normal: explorer(s) — tab strip only when two registries exist -->
         <template v-else>
-          <div v-if="effectiveExplorer.showStrip" class="flex border-b border-border bg-card">
+          <div v-if="effectiveExplorer.showStrip" class="flex border-b border-border bg-card" :class="TOP_ROW_CLASS">
             <button
-              class="flex-1 py-3 text-sm font-medium transition-colors"
+              class="flex-1 flex items-center justify-center text-sm font-medium transition-colors"
               :class="effectiveExplorer.tab === 'issues' ? 'text-primary border-b-2 border-primary' : 'text-muted-foreground'"
               @click="selectExplorerTab('issues')"
             >
               Issues ({{ filteredIssues.length }})
             </button>
             <button
-              class="flex-1 py-3 text-sm font-medium transition-colors"
+              class="flex-1 flex items-center justify-center text-sm font-medium transition-colors"
               :class="effectiveExplorer.tab === 'grace' ? 'text-primary border-b-2 border-primary' : 'text-muted-foreground'"
               @click="selectExplorerTab('grace')"
             >
