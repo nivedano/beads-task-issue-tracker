@@ -1334,14 +1334,14 @@ watch(
           <div v-if="effectiveExplorer.showStrip" class="flex border-b border-border bg-card" :class="TOP_ROW_CLASS">
             <button
               class="flex-1 flex items-center justify-center text-sm font-medium transition-colors"
-              :class="effectiveExplorer.tab === 'issues' ? 'text-primary border-b-2 border-primary' : 'text-muted-foreground'"
+              :class="effectiveExplorer.tab === 'issues' ? 'text-primary border-b-2 border-primary' : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'"
               @click="selectExplorerTab('issues')"
             >
               Issues ({{ filteredIssues.length }})
             </button>
             <button
               class="flex-1 flex items-center justify-center text-sm font-medium transition-colors"
-              :class="effectiveExplorer.tab === 'grace' ? 'text-primary border-b-2 border-primary' : 'text-muted-foreground'"
+              :class="effectiveExplorer.tab === 'grace' ? 'text-primary border-b-2 border-primary' : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'"
               @click="selectExplorerTab('grace')"
             >
               GRACE ({{ graceStatsData.open }})
@@ -1553,7 +1553,7 @@ watch(
       <div class="flex border-b border-border bg-card">
         <button
           class="flex-1 py-3 text-sm font-medium transition-colors"
-          :class="mobilePanel === 'dashboard' ? 'text-primary border-b-2 border-primary' : 'text-muted-foreground'"
+          :class="mobilePanel === 'dashboard' ? 'text-primary border-b-2 border-primary' : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'"
           @click="mobilePanel = 'dashboard'"
         >
           Dashboard
@@ -1561,7 +1561,7 @@ watch(
         <button
           v-if="caps.hasBeads"
           class="flex-1 py-3 text-sm font-medium transition-colors"
-          :class="isMobileExplorerActive('issues') ? 'text-primary border-b-2 border-primary' : 'text-muted-foreground'"
+          :class="isMobileExplorerActive('issues') ? 'text-primary border-b-2 border-primary' : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'"
           @click="selectExplorerTab('issues')"
         >
           Issues ({{ filteredIssues.length }})
@@ -1569,14 +1569,14 @@ watch(
         <button
           v-if="caps.hasGrace"
           class="flex-1 py-3 text-sm font-medium transition-colors"
-          :class="isMobileExplorerActive('grace') ? 'text-primary border-b-2 border-primary' : 'text-muted-foreground'"
+          :class="isMobileExplorerActive('grace') ? 'text-primary border-b-2 border-primary' : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'"
           @click="selectExplorerTab('grace')"
         >
           GRACE ({{ graceStatsData.open }})
         </button>
         <button
           class="flex-1 py-3 text-sm font-medium transition-colors"
-          :class="mobilePanel === 'details' ? 'text-primary border-b-2 border-primary' : 'text-muted-foreground'"
+          :class="mobilePanel === 'details' ? 'text-primary border-b-2 border-primary' : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'"
           @click="mobilePanel = 'details'"
         >
           Details
