@@ -1,4 +1,6 @@
 import type { Issue, CreateIssuePayload, UpdateIssuePayload } from '~/types/issue'
+import type { GraceListResult, GraceChangeDetail, GraceFileContent } from '~/types/grace'
+import { getPathSeparator } from '~/utils/path'
 import { invoke } from '@tauri-apps/api/core'
 import { matchProbeProject } from '~/utils/probe-adapter'
 import type { ProbeMetricsResponse, ProbeProject } from '~/utils/probe-adapter'
@@ -765,12 +767,14 @@ export interface DirectoryEntry {
   path: string
   isDirectory: boolean
   hasBeads: boolean
+  hasGrace: boolean
   usesDolt: boolean
 }
 
 export interface FsListResult {
   currentPath: string
   hasBeads: boolean
+  hasGrace: boolean
   usesDolt: boolean
   entries: DirectoryEntry[]
 }
@@ -806,6 +810,28 @@ export async function fsExists(path: string): Promise<boolean> {
   return true
 }
 
+function joinChild(base: string, child: string): string {
+  const sep = getPathSeparator(base)
+  return base.endsWith(sep) ? `${base}${child}` : `${base}${sep}${child}`
+}
+
+/**
+ * Which registries a project folder exposes: `.beads` (issue explorer) and
+ * `.grace5` (GRACE explorer). Web mode has no filesystem access, so both are
+ * reported absent — the GRACE explorer is desktop-only.
+ */
+export async function probeProjectCapabilities(path: string): Promise<{ hasBeads: boolean; hasGrace: boolean }> {
+  if (!isTauri()) {
+    return { hasBeads: false, hasGrace: false }
+  }
+
+  const [hasBeads, hasGrace] = await Promise.all([
+    fsExists(joinChild(path, '.beads')),
+    fsExists(joinChild(path, '.grace5')),
+  ])
+  return { hasBeads, hasGrace }
+}
+
 // ============================================================================
 // File Watcher API
 // ============================================================================
@@ -832,6 +858,38 @@ export async function getWatcherStatus(): Promise<WatcherStatus> {
     return invoke<WatcherStatus>('get_watcher_status')
   }
   return { active: false, watchedPath: null }
+}
+
+// ============================================================================
+// GRACE API - Read-only .grace5 explorer (desktop only)
+// ============================================================================
+
+export async function graceList(path: string): Promise<GraceListResult> {
+  if (isTauri()) {
+    return invoke<GraceListResult>('grace_list', { path })
+  }
+  throw new Error('GRACE explorer is only available in the desktop app')
+}
+
+export async function graceShow(path: string, id: string): Promise<GraceChangeDetail> {
+  if (isTauri()) {
+    return invoke<GraceChangeDetail>('grace_show', { path, id })
+  }
+  throw new Error('GRACE explorer is only available in the desktop app')
+}
+
+export async function graceReadFile(path: string, relPath: string): Promise<GraceFileContent> {
+  if (isTauri()) {
+    return invoke<GraceFileContent>('grace_read_file', { path, relPath })
+  }
+  throw new Error('GRACE explorer is only available in the desktop app')
+}
+
+export async function graceCheckChanged(path: string): Promise<boolean> {
+  if (isTauri()) {
+    return invoke<boolean>('grace_check_changed', { path })
+  }
+  throw new Error('GRACE explorer is only available in the desktop app')
 }
 
 // ============================================================================

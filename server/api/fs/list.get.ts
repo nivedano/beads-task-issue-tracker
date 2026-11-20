@@ -7,6 +7,18 @@ export interface DirectoryEntry {
   path: string
   isDirectory: boolean
   hasBeads: boolean
+  hasGrace: boolean
+}
+
+/** Whether `dir` contains a subdirectory named `name` (e.g. a `.beads` registry). */
+async function hasSubdirectory(dir: string, name: string): Promise<boolean> {
+  try {
+    const entryStat = await stat(join(dir, name))
+    return entryStat.isDirectory()
+  } catch {
+    // Subdirectory doesn't exist
+    return false
+  }
 }
 
 export default defineEventHandler(async (event) => {
@@ -32,21 +44,18 @@ export default defineEventHandler(async (event) => {
       if (entry.isDirectory()) {
         const fullPath = join(targetPath, entry.name)
 
-        // Check if this directory contains a .beads folder
-        let hasBeads = false
-        try {
-          const beadsPath = join(fullPath, '.beads')
-          const beadsStat = await stat(beadsPath)
-          hasBeads = beadsStat.isDirectory()
-        } catch {
-          // .beads doesn't exist
-        }
+        // Check which registries this directory contains
+        const [hasBeads, hasGrace] = await Promise.all([
+          hasSubdirectory(fullPath, '.beads'),
+          hasSubdirectory(fullPath, '.grace5'),
+        ])
 
         directories.push({
           name: entry.name,
           path: fullPath,
           isDirectory: true,
           hasBeads,
+          hasGrace,
         })
       }
     }
@@ -58,19 +67,16 @@ export default defineEventHandler(async (event) => {
       return a.name.localeCompare(b.name)
     })
 
-    // Check if current directory has .beads
-    let currentHasBeads = false
-    try {
-      const beadsPath = join(targetPath, '.beads')
-      const beadsStat = await stat(beadsPath)
-      currentHasBeads = beadsStat.isDirectory()
-    } catch {
-      // .beads doesn't exist
-    }
+    // Check which registries the current directory contains
+    const [currentHasBeads, currentHasGrace] = await Promise.all([
+      hasSubdirectory(targetPath, '.beads'),
+      hasSubdirectory(targetPath, '.grace5'),
+    ])
 
     return {
       currentPath: targetPath,
       hasBeads: currentHasBeads,
+      hasGrace: currentHasGrace,
       entries: directories,
     }
   } catch (error) {
