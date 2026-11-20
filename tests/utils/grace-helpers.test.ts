@@ -121,11 +121,23 @@ describe('filterGraceChanges', () => {
     expect(filterGraceChanges(changes, noFilters, 'c-0001').map(c => c.id)).toEqual(['C-0001'])
   })
 
-  it('never hides malformed changes', () => {
+  it('treats malformed changes as ordinary rows', () => {
     const changes = [change('C-0001', { malformed: 'missing contract id' }), change('C-0002')]
     expect(filterGraceChanges(changes, noFilters, '').map(c => c.id)).toEqual(['C-0001', 'C-0002'])
-    expect(filterGraceChanges(changes, noFilters, 'missing').map(c => c.id)).toEqual([])
+    expect(filterGraceChanges(changes, { ...noFilters, stage: ['prepared'] }, '').map(c => c.id)).toEqual(['C-0001', 'C-0002'])
+    expect(filterGraceChanges(changes, { ...noFilters, stage: ['closed'] }, '')).toEqual([])
     expect(filterGraceChanges(changes, noFilters, 'c-0001').map(c => c.id)).toEqual(['C-0001'])
+  })
+
+  it('ANDs search with a non-empty facet', () => {
+    const changes = [
+      change('C-0001', { title: 'Retire briefs' }),
+      change('C-0002', { title: 'Retire logs', stage: 'approved' }),
+    ]
+    expect(filterGraceChanges(changes, noFilters, 'retire').map(c => c.id)).toEqual(['C-0001', 'C-0002'])
+    expect(filterGraceChanges(changes, { ...noFilters, stage: ['prepared'] }, 'retire').map(c => c.id))
+      .toEqual(['C-0001'])
+    expect(filterGraceChanges(changes, { ...noFilters, stage: ['closed'] }, 'retire')).toEqual([])
   })
 
   it('treats a whitespace-only search as no search', () => {

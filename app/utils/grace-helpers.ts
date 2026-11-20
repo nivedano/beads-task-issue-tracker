@@ -17,7 +17,12 @@ export interface GraceFilters {
  * Lifecycle ladder, earliest → latest. The same order drives stage sorting
  * and the detail view's stepper.
  */
-export const graceStageLadder: GraceStage[] = ['prepared', 'approved', 'executing', 'reviewed', 'closed']
+export const graceStageLadder: readonly GraceStage[] = ['prepared', 'approved', 'executing', 'reviewed', 'closed']
+
+/** A change counts as closed when it is marked closed or lives in `closed/`. */
+function isClosedChange(change: GraceChangeSummary): boolean {
+  return change.closed || change.inClosedDir
+}
 
 /**
  * Apply scope + stage/authorization facets + free-text search.
@@ -32,15 +37,12 @@ export function filterGraceChanges(
   const query = search.trim().toLowerCase()
 
   return changes.filter((change) => {
-    if (filters.scope !== 'all') {
-      const closed = change.closed || change.inClosedDir
-      if (closed !== (filters.scope === 'closed')) return false
-    }
+    if (filters.scope !== 'all' && isClosedChange(change) !== (filters.scope === 'closed')) return false
     if (filters.stage.length > 0 && !filters.stage.includes(change.stage)) return false
     if (filters.authorization.length > 0 && !filters.authorization.includes(change.authorization)) return false
     if (!query) return true
     return [change.id, change.title, change.problem]
-      .some(value => value !== null && value.toLowerCase().includes(query))
+      .some(value => value != null && value.toLowerCase().includes(query))
   })
 }
 
@@ -73,7 +75,7 @@ export function sortGraceChanges(
 
     switch (field) {
       case 'id':
-        primary = naturalCompare(a.id, b.id) * dir
+        primary = naturalCompare(a.id.toLowerCase(), b.id.toLowerCase()) * dir
         break
       case 'title':
         primary = compareNullable(a.title, b.title, (x, y) => x.localeCompare(y), dir)
@@ -86,7 +88,7 @@ export function sortGraceChanges(
         break
     }
 
-    return primary !== 0 ? primary : naturalCompare(a.id, b.id)
+    return primary !== 0 ? primary : naturalCompare(a.id.toLowerCase(), b.id.toLowerCase())
   })
 }
 
@@ -94,7 +96,7 @@ export function sortGraceChanges(
 export function graceStats(changes: GraceChangeSummary[]): { open: number; closed: number } {
   let closed = 0
   for (const change of changes) {
-    if (change.closed || change.inClosedDir) closed++
+    if (isClosedChange(change)) closed++
   }
   return { open: changes.length - closed, closed }
 }
