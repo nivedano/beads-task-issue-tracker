@@ -159,6 +159,13 @@ watch(() => props.detail?.summary.id, () => {
           </div>
         </div>
 
+        <p
+          v-if="summary.authorizationNote"
+          class="text-[11px] text-amber-600 dark:text-amber-400"
+        >
+          {{ summary.authorizationNote }}
+        </p>
+
         <GraceLifecycleStepper :stage="summary.stage" />
 
         <div

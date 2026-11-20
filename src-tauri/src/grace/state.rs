@@ -13,7 +13,7 @@ use sha2::{Digest, Sha256};
 use crate::grace::model::{
     GraceApproval, GraceChangeSummary, GraceContract, GraceListResult, GraceRun, GraceRunResult,
 };
-use crate::grace::parse::{parse_contract, parse_records, Records};
+use crate::grace::parse::{collapse, parse_contract, parse_records, Records};
 
 /// The kernel version this explorer was written against.
 const SUPPORTED_PIN: &str = "0.9.0";
@@ -26,6 +26,9 @@ const CLOSE_RECORD_MISSING: &str =
 /// is flagged when the same id exists open-side).
 const DUPLICATE_CHANGE: &str =
     "the change exists under both .grace5/changes/ and .grace5/changes/closed/";
+
+/// Longest rejected statement quoted in an authorization note.
+const NOTE_STATEMENT_MAX: usize = 200;
 
 /// SHA-256 of the raw contract bytes with only `\r\n` pairs read as `\n`
 /// (`authorization.md`; never decodes the bytes to a string first).
@@ -67,6 +70,67 @@ pub fn authorization(
     }
 }
 
+/// The reason behind the authorization value: the kernel's obligation phrase
+/// (`authorizationObligation`) first, then the record context that explains it.
+/// `None` when approved — and, because the caller passes no revision for a
+/// missing or unparseable contract, the structural-defect banner speaks alone.
+fn authorization_note(
+    contract_revision: u32,
+    contract_hash: &str,
+    approvals: &[GraceApproval],
+) -> Option<String> {
+    let governing = approvals
+        .iter()
+        .find(|approval| approval.revision == contract_revision);
+    match governing {
+        // Kernel branch order: a rejected decision outranks a stale hash.
+        Some(approval) if approval.decision == "rejected" => {
+            let statement = note_statement(&approval.statement);
+            Some(if statement.is_empty() {
+                format!("no approval for revision {contract_revision}")
+            } else {
+                format!("no approval for revision {contract_revision} — rejected: {statement}")
+            })
+        }
+        Some(approval) if approval.contract_sha256 != contract_hash => Some(format!(
+            "contract altered after approval ({})",
+            approval.file
+        )),
+        Some(_) => None,
+        None => {
+            let last = approvals
+                .iter()
+                .max_by(|left, right| left.revision.cmp(&right.revision));
+            Some(match last {
+                None => format!("no approval for revision {contract_revision}"),
+                Some(approval) => {
+                    let date = approval
+                        .date
+                        .as_deref()
+                        .map(|date| format!(" {date}"))
+                        .unwrap_or_default();
+                    format!(
+                        "no approval for revision {contract_revision} — last: {}, {}{date}",
+                        approval.file, approval.decision
+                    )
+                }
+            })
+        }
+    }
+}
+
+/// Collapsed statement text, cut at [`NOTE_STATEMENT_MAX`] characters with an
+/// ellipsis so a long rejection cannot dominate a table row.
+fn note_statement(statement: &str) -> String {
+    let statement = collapse(statement);
+    if statement.chars().count() <= NOTE_STATEMENT_MAX {
+        return statement;
+    }
+    let mut truncated: String = statement.chars().take(NOTE_STATEMENT_MAX).collect();
+    truncated.push('…');
+    truncated
+}
+
 /// Display-level summary of one change directory.
 pub fn summarize(
     id: &str,
@@ -76,9 +140,12 @@ pub fn summarize(
     records: &Records,
     malformed: Option<String>,
 ) -> GraceChangeSummary {
-    let authorization = match (contract, contract_hash) {
-        (Some(contract), Some(hash)) => authorization(contract.revision, hash, &records.approvals),
-        _ => "unapproved",
+    let (authorization, note) = match (contract, contract_hash) {
+        (Some(contract), Some(hash)) => (
+            authorization(contract.revision, hash, &records.approvals),
+            authorization_note(contract.revision, hash, &records.approvals),
+        ),
+        _ => ("unapproved", None),
     };
     let (checks_passed, checks_required) = counts(contract, &records.runs);
     let review = records.reviews.iter().max_by_key(|review| review.n);
@@ -88,6 +155,7 @@ pub fn summarize(
         revision: contract.map(|contract| contract.revision),
         stage: stage(records, authorization).to_string(),
         authorization: authorization.to_string(),
+        authorization_note: note,
         malformed,
         in_closed_dir,
         closed: records.close_exists,
@@ -609,6 +677,99 @@ mod tests {
     }
 
     #[test]
+    fn note_names_the_last_approval_when_the_contract_revision_drifted() {
+        let hash = "abc";
+        let mut contract = contract_with(Vec::new());
+        contract.revision = 7;
+        let mut records = empty_records();
+        let mut approval = approval_record(6, "approved", hash);
+        approval.date = Some("2026-11-20".to_string());
+        records.approvals.push(approval);
+
+        let summary = summarize(
+            "C-0019-term-checks",
+            false,
+            Some(&contract),
+            Some(hash),
+            &records,
+            None,
+        );
+
+        assert_eq!(summary.authorization, "unapproved");
+        assert_eq!(
+            summary.authorization_note.as_deref(),
+            Some("no approval for revision 7 — last: approval-6.xml, approved 2026-11-20")
+        );
+    }
+
+    #[test]
+    fn note_names_a_rejected_statement() {
+        let hash = "abc";
+        let contract = contract_with(Vec::new());
+        let mut records = empty_records();
+        let mut approval = approval_record(1, "rejected", hash);
+        approval.statement = "The Change does not cover\n  rollback.".to_string();
+        records.approvals.push(approval);
+
+        let summary = summarize("C-1", false, Some(&contract), Some(hash), &records, None);
+
+        assert_eq!(summary.authorization, "rejected");
+        assert_eq!(
+            summary.authorization_note.as_deref(),
+            Some("no approval for revision 1 — rejected: The Change does not cover rollback.")
+        );
+    }
+
+    #[test]
+    fn note_truncates_a_long_rejected_statement() {
+        let hash = "abc";
+        let contract = contract_with(Vec::new());
+        let mut records = empty_records();
+        let mut approval = approval_record(1, "rejected", hash);
+        approval.statement = "a".repeat(210);
+        records.approvals.push(approval);
+
+        let summary = summarize("C-1", false, Some(&contract), Some(hash), &records, None);
+
+        assert_eq!(
+            summary.authorization_note.as_deref(),
+            Some(format!("no approval for revision 1 — rejected: {}…", "a".repeat(200)).as_str())
+        );
+    }
+
+    #[test]
+    fn note_names_the_approval_whose_contract_hash_no_longer_matches() {
+        let hash = "abc";
+        let contract = contract_with(Vec::new());
+        let mut records = empty_records();
+        records
+            .approvals
+            .push(approval_record(1, "approved", "other"));
+
+        let summary = summarize("C-1", false, Some(&contract), Some(hash), &records, None);
+
+        assert_eq!(summary.authorization, "altered after approval");
+        assert_eq!(
+            summary.authorization_note.as_deref(),
+            Some("contract altered after approval (approval-1.xml)")
+        );
+    }
+
+    #[test]
+    fn note_is_the_plain_kernel_phrase_when_no_approval_exists() {
+        let contract = contract_with(Vec::new());
+        let records = empty_records();
+
+        let summary = summarize("C-1", false, Some(&contract), Some("abc"), &records, None);
+
+        assert_eq!(summary.authorization, "unapproved");
+        assert_eq!(
+            summary.authorization_note.as_deref(),
+            Some("no approval for revision 1")
+        );
+    }
+
+    #[test]
     fn stage_follows_the_ladder() {
         let hash = "abc";
         let contract = contract_with(Vec::new());
@@ -697,6 +858,7 @@ mod tests {
         );
         assert_eq!(summary.stage, "closed");
         assert_eq!(summary.authorization, "approved");
+        assert!(summary.authorization_note.is_none());
         assert!(summary.closed);
         assert!(summary.in_closed_dir);
         assert_eq!(summary.revision, Some(1));
@@ -821,6 +983,7 @@ mod tests {
         assert!(summary.title.is_none());
         assert!(summary.revision.is_none());
         assert_eq!(summary.authorization, "unapproved");
+        assert!(summary.authorization_note.is_none());
         assert_eq!(summary.stage, "executing");
         assert_eq!(
             summary.malformed.as_deref(),

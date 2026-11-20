@@ -166,7 +166,7 @@ const toggleSort = (columnId: string) => {
               </template>
 
               <template v-else-if="col.id === 'authorization'">
-                <GraceAuthorizationBadge :authorization="change.authorization" size="sm" />
+                <GraceAuthorizationBadge :authorization="change.authorization" :note="change.authorizationNote" size="sm" />
               </template>
 
               <template v-else-if="col.id === 'checks'">

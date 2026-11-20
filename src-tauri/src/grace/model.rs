@@ -262,6 +262,9 @@ pub struct GraceChangeSummary {
     pub revision: Option<u32>,
     pub stage: String,
     pub authorization: String,
+    /// Why the authorization value is what it is (kernel phrase first, then
+    /// record context); `None` when approved or the contract revision is unknown.
+    pub authorization_note: Option<String>,
     pub malformed: Option<String>,
     pub in_closed_dir: bool,
     pub closed: bool,

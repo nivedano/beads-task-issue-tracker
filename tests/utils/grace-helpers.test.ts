@@ -18,6 +18,7 @@ function change(id: string, overrides: Partial<GraceChangeSummary> = {}): GraceC
     revision: null,
     stage: 'prepared',
     authorization: 'unapproved',
+    authorizationNote: null,
     malformed: null,
     inClosedDir: false,
     closed: false,

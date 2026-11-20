@@ -234,6 +234,8 @@ export interface GraceChangeSummary {
   revision: number | null
   stage: GraceStage
   authorization: GraceAuthorization
+  /** Why the value is what it is; null when approved or revision is unknown. */
+  authorizationNote: string | null
   malformed: string | null
   inClosedDir: boolean
   closed: boolean
