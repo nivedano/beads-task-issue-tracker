@@ -282,3 +282,28 @@ pub struct GraceListResult {
     pub closed_count: u32,
     pub changes: Vec<GraceChangeSummary>,
 }
+
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct GraceChangeDetail {
+    pub summary: GraceChangeSummary,
+    pub dir: String,
+    pub contract: Option<GraceContract>,
+    pub approvals: Vec<GraceApproval>,
+    pub runs: Vec<GraceRun>,
+    pub reviews: Vec<GraceReview>,
+    pub close: Option<GraceClose>,
+    pub briefs: Vec<GraceBrief>,
+    pub notes_md: Option<String>,
+    pub log_dirs: Vec<u32>,
+    pub defects: Vec<String>,
+    pub latest_results: Vec<GraceRunResult>,
+}
+
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct GraceFileContent {
+    pub content: String,
+    pub truncated: bool,
+    pub size_bytes: u64,
+}

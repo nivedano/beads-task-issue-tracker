@@ -460,6 +460,8 @@ pub struct DirectoryEntry {
     pub is_directory: bool,
     #[serde(rename = "hasBeads")]
     pub has_beads: bool,
+    #[serde(rename = "hasGrace")]
+    pub has_grace: bool,
     #[serde(rename = "usesDolt")]
     pub uses_dolt: bool,
 }
@@ -478,6 +480,8 @@ pub struct FsListResult {
     pub current_path: String,
     #[serde(rename = "hasBeads")]
     pub has_beads: bool,
+    #[serde(rename = "hasGrace")]
+    pub has_grace: bool,
     #[serde(rename = "usesDolt")]
     pub uses_dolt: bool,
     pub entries: Vec<DirectoryEntry>,
@@ -3237,6 +3241,7 @@ fn quick_access_roots() -> Vec<DirectoryEntry> {
                 path: strip_verbatim_prefix(&path.to_string_lossy()),
                 is_directory: true,
                 has_beads,
+                has_grace: path.join(".grace5").is_dir(),
                 uses_dolt: has_beads && project_uses_dolt(&beads_path),
             }
         })
@@ -3293,6 +3298,7 @@ fn list_directory(path: Option<String>) -> Result<FsListResult, String> {
                 path: strip_verbatim_prefix(&full_path.to_string_lossy()),
                 is_directory: true,
                 has_beads,
+                has_grace: full_path.join(".grace5").is_dir(),
                 uses_dolt,
             });
         }
@@ -3314,6 +3320,7 @@ fn list_directory(path: Option<String>) -> Result<FsListResult, String> {
     Ok(FsListResult {
         current_path: strip_verbatim_prefix(&target_path.to_string_lossy()),
         has_beads: current_has_beads,
+        has_grace: target_path.join(".grace5").is_dir(),
         uses_dolt: current_uses_dolt,
         entries: directories,
     })
@@ -4755,9 +4762,13 @@ fn start_watching(
         watcher_state.watched_path = None;
     }
 
-    let beads_dir = PathBuf::from(&path).join(".beads");
-    if !beads_dir.exists() {
-        return Err(format!(".beads directory not found at: {}", beads_dir.display()));
+    let project_dir = PathBuf::from(&path);
+    let targets = grace::fs::watch_targets(&project_dir);
+    if targets.is_empty() {
+        return Err(format!(
+            "no .beads or .grace5 directory found at: {}",
+            project_dir.display()
+        ));
     }
 
     let project_path = path.clone();
@@ -4871,20 +4882,21 @@ fn start_watching(
         },
     ).map_err(|e| format!("Failed to create watcher: {}", e))?;
 
-    // Watch .beads/ directory
-    // Dolt backend: recursive (changes happen in .dolt/ subdirectories)
-    // SQLite backend: non-recursive (all target files are at root level)
-    let watch_mode = if project_uses_dolt(&beads_dir) {
-        notify::RecursiveMode::Recursive
-    } else {
-        notify::RecursiveMode::NonRecursive
-    };
-    debouncer.watcher().watch(
-        beads_dir.as_path(),
-        watch_mode,
-    ).map_err(|e| format!("Failed to watch .beads/: {}", e))?;
-
-    log::info!("[watcher] Started watching: {}", beads_dir.display());
+    // Watch each registry present. Grace artifacts nest (changes/<id>/records/...),
+    // so .grace5 is always recursive; .beads is recursive only on the Dolt backend.
+    for target in &targets {
+        let is_grace = target.file_name().and_then(|name| name.to_str()) == Some(".grace5");
+        let watch_mode = if is_grace || project_uses_dolt(target) {
+            notify::RecursiveMode::Recursive
+        } else {
+            notify::RecursiveMode::NonRecursive
+        };
+        debouncer
+            .watcher()
+            .watch(target.as_path(), watch_mode)
+            .map_err(|e| format!("Failed to watch {}: {}", target.display(), e))?;
+        log::info!("[watcher] Started watching: {}", target.display());
+    }
     watcher_state.debouncer = Some(debouncer);
     watcher_state.watched_path = Some(path);
 
@@ -5230,6 +5242,10 @@ pub fn run() {
             delete_external_data,
             patch_external_data,
             launch_probe,
+            grace::grace_list,
+            grace::grace_show,
+            grace::grace_read_file,
+            grace::grace_check_changed,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -5296,6 +5312,46 @@ mod tests {
                 entry.path
             );
         }
+    }
+
+    /// A directory counts as a grace project when it holds `.grace5/`, both for
+    /// its parent's entry and for the listed current path.
+    #[test]
+    fn list_directory_reports_grace_projects() {
+        let root = std::env::temp_dir().join(format!(
+            "grace-fs-list-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|elapsed| elapsed.as_nanos())
+                .unwrap_or(0)
+        ));
+        let with_grace = root.join("with-grace");
+        let without = root.join("without-grace");
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(with_grace.join(".grace5")).unwrap();
+        std::fs::create_dir_all(&without).unwrap();
+
+        let listing =
+            list_directory(Some(root.to_string_lossy().to_string())).expect("list temp root");
+        let entry = |name: &str| {
+            listing
+                .entries
+                .iter()
+                .find(|entry| entry.name == name)
+                .unwrap_or_else(|| panic!("missing entry {name}"))
+        };
+        assert!(entry("with-grace").has_grace);
+        assert!(!entry("without-grace").has_grace);
+
+        let inside = list_directory(Some(with_grace.to_string_lossy().to_string()))
+            .expect("list grace project");
+        assert!(inside.has_grace);
+        let inside_without = list_directory(Some(without.to_string_lossy().to_string()))
+            .expect("list plain project");
+        assert!(!inside_without.has_grace);
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// A bare drive letter must resolve to the drive root, not to the process'

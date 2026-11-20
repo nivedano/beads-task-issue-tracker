@@ -125,12 +125,12 @@ pub fn list(path: &Path) -> GraceListResult {
                 continue;
             }
             if let Some(id) = change_id(&dir) {
-                changes.push(summarize_change(&id, &dir, false));
+                changes.push(load_change(&id, &dir, false).summary);
             }
         }
         for dir in subdirectories(&changes_dir.join("closed")) {
             if let Some(id) = change_id(&dir) {
-                changes.push(summarize_change(&id, &dir, true));
+                changes.push(load_change(&id, &dir, true).summary);
             }
         }
     }
@@ -201,9 +201,56 @@ fn counts(contract: Option<&GraceContract>, runs: &[GraceRun]) -> (u32, u32) {
     (passed, required.len() as u32)
 }
 
-fn summarize_change(id: &str, dir: &Path, in_closed_dir: bool) -> GraceChangeSummary {
-    let contract_bytes = fs::read(dir.join("contract.xml"));
-    let (contract, contract_hash, contract_error) = match contract_bytes {
+/// Contract, records, structural defects and summary for one change directory.
+pub(crate) struct ChangeLoad {
+    pub summary: GraceChangeSummary,
+    pub contract: Option<GraceContract>,
+    pub records: Records,
+    pub defects: Vec<String>,
+}
+
+/// Reads one change directory: contract bytes (hash + parse), records, and the
+/// structural defects in kernel order (contract, location, records).
+pub(crate) fn load_change(id: &str, dir: &Path, in_closed_dir: bool) -> ChangeLoad {
+    let (contract, contract_hash, contract_error) = read_contract(id, dir);
+    let (records, records_defects) = parse_records(dir, id);
+    let location_error = if in_closed_dir && !records.close_exists {
+        Some(CLOSE_RECORD_MISSING.to_string())
+    } else {
+        None
+    };
+    let mut defects = Vec::new();
+    if let Some(error) = contract_error.clone() {
+        defects.push(error);
+    }
+    if let Some(error) = location_error.clone() {
+        defects.push(error);
+    }
+    defects.extend(records_defects.iter().cloned());
+    let malformed = contract_error
+        .or(location_error)
+        .or_else(|| records_defects.into_iter().next());
+    let summary = summarize(
+        id,
+        in_closed_dir,
+        contract.as_ref(),
+        contract_hash.as_deref(),
+        &records,
+        malformed,
+    );
+    ChangeLoad {
+        summary,
+        contract,
+        records,
+        defects,
+    }
+}
+
+fn read_contract(
+    id: &str,
+    dir: &Path,
+) -> (Option<GraceContract>, Option<String>, Option<String>) {
+    match fs::read(dir.join("contract.xml")) {
         Ok(bytes) => {
             let hash = contract_sha256(&bytes);
             match parse_contract(&bytes, id) {
@@ -221,24 +268,7 @@ fn summarize_change(id: &str, dir: &Path, in_closed_dir: bool) -> GraceChangeSum
             None,
             Some(format!("contract.xml cannot be read: {error}")),
         ),
-    };
-    let (records, defects) = parse_records(dir, id);
-    let location_error = if in_closed_dir && !records.close_exists {
-        Some(CLOSE_RECORD_MISSING.to_string())
-    } else {
-        None
-    };
-    let malformed = contract_error
-        .or(location_error)
-        .or_else(|| defects.into_iter().next());
-    summarize(
-        id,
-        in_closed_dir,
-        contract.as_ref(),
-        contract_hash.as_deref(),
-        &records,
-        malformed,
-    )
+    }
 }
 
 fn change_id(dir: &Path) -> Option<String> {
@@ -434,15 +464,6 @@ mod tests {
             findings,
             adequacy: Vec::new(),
             rules: Vec::new(),
-        }
-    }
-
-    fn finding(id: &str, status: &str) -> GraceFinding {
-        GraceFinding {
-            id: id.to_string(),
-            severity: "non-blocking".to_string(),
-            status: status.to_string(),
-            owner_decision: None,
         }
     }
 
