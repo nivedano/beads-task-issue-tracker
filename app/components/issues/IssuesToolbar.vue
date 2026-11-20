@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { IssueStatus, IssueType, IssuePriority, ColumnConfig } from '~/types/issue'
-import { onClickOutside } from '@vueuse/core'
 import { Input } from '~/components/ui/input'
+import { useExclusiveFilterGroup } from '~/composables/useExclusiveFilterGroup'
 import { Button } from '~/components/ui/button'
 import {
   Tooltip,
@@ -66,28 +66,21 @@ onMounted(() => {
   if (!active || active === document.body) focusSearch()
 })
 
-// Track which filter dropdown is currently open (exclusive group)
-type FilterType = 'type' | 'label' | 'status' | 'priority' | 'assignee' | 'exclusion' | null
-const activeFilter = ref<FilterType>(null)
+// Track which filter dropdown is currently open (exclusive group). Opening one
+// also closes the column popover, including via the keyboard.
+type FilterType = 'type' | 'label' | 'status' | 'priority' | 'assignee' | 'exclusion'
 
-// Ref for the filter buttons container
-const filterButtonsRef = ref<HTMLElement | null>(null)
+const columnPopoverRef = ref<InstanceType<typeof ColumnConfigPopover> | null>(null)
 
-// Close dropdown when clicking outside filter buttons (ignore dropdown content)
-onClickOutside(filterButtonsRef, () => {
-  activeFilter.value = null
-}, {
-  ignore: ['[data-slot="dropdown-menu-content"]']
+const {
+  activeFilter,
+  filterButtonsRef,
+  handleFilterClick,
+  onFilterOpen,
+  onFilterClose,
+} = useExclusiveFilterGroup<FilterType>({
+  onAnyOpen: () => columnPopoverRef.value?.close(),
 })
-
-// Handle click on filter button - toggle the filter
-const handleFilterClick = (filter: FilterType) => {
-  if (activeFilter.value === filter) {
-    activeFilter.value = null
-  } else {
-    activeFilter.value = filter
-  }
-}
 </script>
 
 <template>
@@ -147,8 +140,8 @@ const handleFilterClick = (filter: FilterType) => {
           <TypeFilterDropdown
             :selected-types="selectedTypes"
             :open="activeFilter === 'type'"
-            @open="activeFilter = 'type'"
-            @close="activeFilter = null"
+            @open="onFilterOpen('type')"
+            @close="onFilterClose"
             @toggle="$emit('toggleType', $event)"
           />
         </div>
@@ -158,8 +151,8 @@ const handleFilterClick = (filter: FilterType) => {
             :available-labels="availableLabels"
             :selected-labels="selectedLabels"
             :open="activeFilter === 'label'"
-            @open="activeFilter = 'label'"
-            @close="activeFilter = null"
+            @open="onFilterOpen('label')"
+            @close="onFilterClose"
             @toggle="$emit('toggleLabel', $event)"
           />
         </div>
@@ -168,8 +161,8 @@ const handleFilterClick = (filter: FilterType) => {
           <StatusFilterDropdown
             :selected-statuses="selectedStatuses"
             :open="activeFilter === 'status'"
-            @open="activeFilter = 'status'"
-            @close="activeFilter = null"
+            @open="onFilterOpen('status')"
+            @close="onFilterClose"
             @toggle="$emit('toggleStatus', $event)"
           />
         </div>
@@ -178,8 +171,8 @@ const handleFilterClick = (filter: FilterType) => {
           <PriorityFilterDropdown
             :selected-priorities="selectedPriorities"
             :open="activeFilter === 'priority'"
-            @open="activeFilter = 'priority'"
-            @close="activeFilter = null"
+            @open="onFilterOpen('priority')"
+            @close="onFilterClose"
             @toggle="$emit('togglePriority', $event)"
           />
         </div>
@@ -189,8 +182,8 @@ const handleFilterClick = (filter: FilterType) => {
             :available-assignees="availableAssignees"
             :selected-assignees="selectedAssignees"
             :open="activeFilter === 'assignee'"
-            @open="activeFilter = 'assignee'"
-            @close="activeFilter = null"
+            @open="onFilterOpen('assignee')"
+            @close="onFilterClose"
             @toggle="$emit('toggleAssignee', $event)"
           />
         </div>
@@ -200,8 +193,8 @@ const handleFilterClick = (filter: FilterType) => {
             :available-labels="availableLabels"
             :available-assignees="availableAssignees"
             :open="activeFilter === 'exclusion'"
-            @open="activeFilter = 'exclusion'"
-            @close="activeFilter = null"
+            @open="onFilterOpen('exclusion')"
+            @close="onFilterClose"
           />
         </div>
       </div>
@@ -229,6 +222,7 @@ const handleFilterClick = (filter: FilterType) => {
     </Button>
 
     <ColumnConfigPopover
+      ref="columnPopoverRef"
       :columns="columns"
       :reorder="true"
       @update:columns="$emit('update:columns', $event)"

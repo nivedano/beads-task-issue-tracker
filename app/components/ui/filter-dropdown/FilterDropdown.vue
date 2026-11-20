@@ -55,9 +55,11 @@ const emit = defineEmits<{
   close: []
 }>()
 
-// Keyboard parity with pointer opening: Enter/Space/ArrowDown on the focused
-// trigger toggles the menu (the toolbar only sees open/close requests).
-const handleTriggerKeydown = () => {
+// Keyboard parity with pointer opening. ArrowDown on an OPEN menu must not
+// close it — that is Reka's standard move-focus-into-items key — so only
+// Enter/Space toggle a close.
+const handleTriggerKeydown = (key: 'enter' | 'space' | 'down') => {
+  if (key === 'down' && props.open) return
   if (props.open) emit('close')
   else emit('open')
 }
@@ -73,9 +75,9 @@ const triggerClass = computed(() => props.iconOnly
 
 <template>
   <div
-    @keydown.enter.prevent="handleTriggerKeydown"
-    @keydown.space.prevent="handleTriggerKeydown"
-    @keydown.down.prevent="handleTriggerKeydown"
+    @keydown.enter.prevent="handleTriggerKeydown('enter')"
+    @keydown.space.prevent="handleTriggerKeydown('space')"
+    @keydown.down.prevent="handleTriggerKeydown('down')"
   >
     <Tooltip>
       <DropdownMenu :open="open" :modal="false">
@@ -90,7 +92,7 @@ const triggerClass = computed(() => props.iconOnly
               <template v-if="!iconOnly">
                 {{ label }}
                 <span
-                  v-if="count && count > 0"
+                  v-if="(count ?? 0) > 0"
                   class="ml-0.5 rounded-full bg-primary text-primary-foreground text-[10px] px-1.5 min-w-[18px] text-center"
                 >
                   {{ count }}
@@ -98,7 +100,7 @@ const triggerClass = computed(() => props.iconOnly
               </template>
               <template v-else>
                 <span
-                  v-if="count && count > 0"
+                  v-if="(count ?? 0) > 0"
                   class="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary text-[10px] font-medium text-primary-foreground px-1"
                 >
                   {{ count }}

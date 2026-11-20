@@ -9,6 +9,7 @@ import {
 import { Button } from '~/components/ui/button'
 import { Checkbox } from '~/components/ui/checkbox'
 import Sortable from 'sortablejs'
+import { mergeReorderedColumns } from '~/utils/column-config-helpers'
 
 const props = withDefaults(defineProps<{
   columns: ColumnConfig[]
@@ -27,6 +28,9 @@ const emit = defineEmits<{
 }>()
 
 const isOpen = ref(false)
+// Root wrapper covers both the trigger and the panel, so Escape works whether
+// focus stayed on the trigger or moved into the checkbox list.
+const rootRef = ref<HTMLElement | null>(null)
 // These must be PLAIN element refs: onClickOutside dereferences the ref and
 // calls `.contains` on it. A component ref has no `.contains`, which made
 // every outside click throw and left the panel open.
@@ -75,15 +79,12 @@ const initSortable = () => {
       container.insertBefore(evt.item, refNode)
       // Rebuild the full array: excluded (identity) columns keep their place.
       const byId = new Map(displayColumns.value.map(column => [column.id, column]))
-      const ordered = newOrder
+      const orderedVisible = newOrder
         .map(id => byId.get(id))
         .filter((column): column is ColumnConfig => !!column)
-      if (ordered.length !== displayColumns.value.length) return
-      let cursor = 0
-      emit('update:columns', props.columns.map((column) => {
-        if (props.excludeIds.includes(column.id)) return column
-        return ordered[cursor++]!
-      }))
+      const reordered = mergeReorderedColumns(props.columns, orderedVisible, props.excludeIds)
+      if (!reordered) return
+      emit('update:columns', reordered)
     },
   })
 }
@@ -96,7 +97,13 @@ onClickOutside(panelRef, (event) => {
 
 onKeyStroke('Escape', () => {
   if (isOpen.value) isOpen.value = false
-})
+}, { target: rootRef })
+
+const close = () => {
+  isOpen.value = false
+}
+
+defineExpose({ close })
 
 watch(isOpen, (open) => {
   if (open) {
@@ -116,7 +123,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="relative">
+  <div ref="rootRef" class="relative">
     <!-- Plain element ref: onClickOutside needs `.contains` on the trigger. -->
     <div ref="triggerRef">
       <Tooltip>

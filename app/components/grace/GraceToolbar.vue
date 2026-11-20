@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import type { GraceStage, GraceAuthorization, GraceScope } from '~/types/grace'
 import type { ColumnConfig } from '~/types/issue'
-import { onClickOutside } from '@vueuse/core'
 import { Input } from '~/components/ui/input'
+import { useExclusiveFilterGroup } from '~/composables/useExclusiveFilterGroup'
 import { ColumnConfigPopover } from '~/components/ui/column-config-popover'
 import StageFilterDropdown from '~/components/grace/StageFilterDropdown.vue'
 import AuthorizationFilterDropdown from '~/components/grace/AuthorizationFilterDropdown.vue'
@@ -45,21 +45,21 @@ onMounted(() => {
   if (!active || active === document.body) focusSearch()
 })
 
-// Track which filter dropdown is currently open (exclusive group)
-type FilterType = 'stage' | 'authorization' | 'scope' | null
-const activeFilter = ref<FilterType>(null)
+// Track which filter dropdown is currently open (exclusive group). Opening one
+// also closes the column popover, including via the keyboard.
+type FilterType = 'stage' | 'authorization' | 'scope'
 
-const filterButtonsRef = ref<HTMLElement | null>(null)
+const columnPopoverRef = ref<InstanceType<typeof ColumnConfigPopover> | null>(null)
 
-onClickOutside(filterButtonsRef, () => {
-  activeFilter.value = null
-}, {
-  ignore: ['[data-slot="dropdown-menu-content"]']
+const {
+  activeFilter,
+  filterButtonsRef,
+  handleFilterClick,
+  onFilterOpen,
+  onFilterClose,
+} = useExclusiveFilterGroup<FilterType>({
+  onAnyOpen: () => columnPopoverRef.value?.close(),
 })
-
-const handleFilterClick = (filter: FilterType) => {
-  activeFilter.value = activeFilter.value === filter ? null : filter
-}
 </script>
 
 <template>
@@ -90,8 +90,8 @@ const handleFilterClick = (filter: FilterType) => {
           <StageFilterDropdown
             :selected-stages="selectedStages"
             :open="activeFilter === 'stage'"
-            @open="activeFilter = 'stage'"
-            @close="activeFilter = null"
+            @open="onFilterOpen('stage')"
+            @close="onFilterClose"
             @toggle="$emit('toggleStage', $event)"
           />
         </div>
@@ -100,8 +100,8 @@ const handleFilterClick = (filter: FilterType) => {
           <AuthorizationFilterDropdown
             :selected-authorizations="selectedAuthorizations"
             :open="activeFilter === 'authorization'"
-            @open="activeFilter = 'authorization'"
-            @close="activeFilter = null"
+            @open="onFilterOpen('authorization')"
+            @close="onFilterClose"
             @toggle="$emit('toggleAuthorization', $event)"
           />
         </div>
@@ -110,8 +110,8 @@ const handleFilterClick = (filter: FilterType) => {
           <ScopeFilterDropdown
             :scope="scope"
             :open="activeFilter === 'scope'"
-            @open="activeFilter = 'scope'"
-            @close="activeFilter = null"
+            @open="onFilterOpen('scope')"
+            @close="onFilterClose"
             @select="$emit('selectScope', $event)"
           />
         </div>
@@ -119,6 +119,7 @@ const handleFilterClick = (filter: FilterType) => {
 
       <!-- The GRACE identity column (id) is not configurable. -->
       <ColumnConfigPopover
+        ref="columnPopoverRef"
         :columns="columns"
         :exclude-ids="['id']"
         :reorder="false"
