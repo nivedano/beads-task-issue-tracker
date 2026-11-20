@@ -23,8 +23,8 @@ defineEmits<{
 <template>
   <div class="p-4 pb-0 space-y-3 border-b border-border">
     <!-- Badges row -->
-    <div class="flex items-center gap-1.5 flex-wrap">
-      <CopyableId :value="selectedIssue.id" :display-value="selectedIssue.id.includes('-') ? selectedIssue.id.slice(selectedIssue.id.lastIndexOf('-') + 1) : selectedIssue.id" />
+    <div class="group flex items-center gap-1.5 flex-wrap">
+      <CopyableId :value="selectedIssue.id" hover-icon :display-value="selectedIssue.id.includes('-') ? selectedIssue.id.slice(selectedIssue.id.lastIndexOf('-') + 1) : selectedIssue.id" />
       <TypeBadge :type="selectedIssue.type" size="sm" />
       <StatusBadge :status="isIssueBlocked(selectedIssue) ? 'blocked' : selectedIssue.status" :blocked-by="selectedIssue.blockedBy" size="sm" />
       <PriorityBadge :priority="selectedIssue.priority" size="sm" />

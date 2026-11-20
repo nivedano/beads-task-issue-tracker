@@ -485,7 +485,7 @@ defineExpose({ focusList })
             <template v-if="group.epic">
               <TableRow
                 :data-issue-id="group.epic.id"
-                class="cursor-pointer bg-muted/40"
+                class="group cursor-pointer bg-muted/40"
                 :class="[
                   multiSelectMode
                     ? (isSelected(group.epic.id) ? 'bg-accent/50 hover:bg-accent/70' : 'hover:bg-muted/50')
@@ -545,7 +545,7 @@ defineExpose({ focusList })
                       </button>
                       <!-- Spacer when no chevron to align IDs -->
                       <div v-else class="w-5 shrink-0" />
-                      <CopyableId :value="group.epic.id" :display-value="getShortId(group.epic.id)" />
+                      <CopyableId :value="group.epic.id" :display-value="getShortId(group.epic.id)" hover-icon />
                     </div>
                   </template>
 
@@ -654,7 +654,7 @@ defineExpose({ focusList })
                   v-for="child in group.children"
                   :key="child.id"
                   :data-issue-id="child.id"
-                  class="cursor-pointer border-l-4 border-r-4"
+                  class="group cursor-pointer border-l-4 border-r-4"
                   :class="[
                     getEpicBorderColors(groupIndex).left,
                     getEpicBorderColors(groupIndex).right,
@@ -695,7 +695,7 @@ defineExpose({ focusList })
 
                     <template v-else-if="col.id === 'id'">
                       <div class="pl-10">
-                        <CopyableId :value="child.id" :display-value="getShortId(child.id)" />
+                        <CopyableId :value="child.id" :display-value="getShortId(child.id)" hover-icon />
                       </div>
                     </template>
 
@@ -764,7 +764,7 @@ defineExpose({ focusList })
                 v-for="issue in group.children"
                 :key="issue.id"
                 :data-issue-id="issue.id"
-                class="cursor-pointer"
+                class="group cursor-pointer"
                 :class="[
                   multiSelectMode
                     ? (isSelected(issue.id) ? 'bg-accent/50 hover:bg-accent/70' : 'hover:bg-muted/50')
@@ -803,7 +803,7 @@ defineExpose({ focusList })
 
                   <template v-else-if="col.id === 'id'">
                     <div class="pl-7">
-                      <CopyableId :value="issue.id" :display-value="getShortId(issue.id)" />
+                      <CopyableId :value="issue.id" :display-value="getShortId(issue.id)" hover-icon />
                     </div>
                   </template>
 
@@ -873,7 +873,7 @@ defineExpose({ focusList })
             v-for="issue in sortedIssues"
             :key="issue.id"
             :data-issue-id="issue.id"
-            class="cursor-pointer"
+            class="group cursor-pointer"
             :class="[
               multiSelectMode
                 ? (isSelected(issue.id) ? 'bg-accent/50 hover:bg-accent/70' : 'hover:bg-muted/50')
@@ -912,7 +912,7 @@ defineExpose({ focusList })
 
               <template v-else-if="col.id === 'id'">
                 <div class="pl-7">
-                  <CopyableId :value="issue.id" :display-value="getShortId(issue.id)" />
+                  <CopyableId :value="issue.id" :display-value="getShortId(issue.id)" hover-icon />
                 </div>
               </template>
 

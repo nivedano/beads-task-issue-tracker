@@ -15,9 +15,9 @@ const props = defineProps<{
 }>()
 
 const authorizationConfig: Record<GraceAuthorization, { label: string; class: string }> = {
-  approved: { label: 'APPROVED', class: 'bg-green-600 text-white' },
+  approved: { label: 'APPROVED', class: 'badge-gradient bg-status-in-progress-gradient text-white' },
   rejected: { label: 'REJECTED', class: 'bg-destructive text-destructive-foreground' },
-  'altered after approval': { label: 'ALTERED AFTER APPROVAL', class: 'bg-amber-500 text-black' },
+  'altered after approval': { label: 'ALTERED AFTER APPROVAL', class: 'badge-gradient bg-status-deferred-gradient text-white' },
   unapproved: { label: 'UNAPPROVED', class: 'bg-muted text-muted-foreground' },
 }
 

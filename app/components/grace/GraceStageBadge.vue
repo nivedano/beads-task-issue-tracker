@@ -9,10 +9,10 @@ const props = defineProps<{
 
 const stageConfig: Record<GraceStage, { label: string; class: string }> = {
   prepared: { label: 'PREPARED', class: 'bg-secondary text-secondary-foreground' },
-  approved: { label: 'APPROVED', class: 'bg-blue-600 text-white' },
-  executing: { label: 'EXECUTING', class: 'bg-amber-500 text-black' },
-  reviewed: { label: 'REVIEWED', class: 'bg-violet-600 text-white' },
-  closed: { label: 'CLOSED', class: 'bg-green-600 text-white' },
+  approved: { label: 'APPROVED', class: 'badge-gradient bg-status-open-gradient text-white' },
+  executing: { label: 'EXECUTING', class: 'badge-gradient bg-status-in-progress-gradient text-white' },
+  reviewed: { label: 'REVIEWED', class: 'badge-gradient bg-status-pinned-gradient text-white' },
+  closed: { label: 'CLOSED', class: 'badge-gradient bg-status-closed-gradient text-white' },
 }
 
 const config = computed(() => stageConfig[props.stage] ?? stageConfig.prepared)

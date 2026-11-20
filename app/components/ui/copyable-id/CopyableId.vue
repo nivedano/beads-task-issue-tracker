@@ -36,7 +36,7 @@ const copyToClipboard = async (event: Event) => {
 
 <template>
   <button
-    :class="cn('flex items-center gap-1 text-[10px] text-muted-foreground font-mono hover:text-foreground transition-colors', props.class)"
+    :class="cn('flex items-center gap-1 text-xs text-muted-foreground font-mono hover:text-foreground transition-colors', props.class)"
     :title="`Copy ${props.value}`"
     @click="copyToClipboard"
   >

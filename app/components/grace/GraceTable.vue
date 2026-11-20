@@ -74,6 +74,7 @@ const toggleSort = (columnId: string) => {
             class="font-medium"
             :class="[
               { 'cursor-pointer select-none hover:bg-secondary/50': isSortable(col.id) },
+              col.id === 'id' ? 'pl-7' : '',
               col.id === 'revision' ? 'w-20' : '',
             ]"
             @click="toggleSort(col.id)"
@@ -132,10 +133,11 @@ const toggleSort = (columnId: string) => {
             <TableCell
               v-for="col in visibleColumns"
               :key="col.id"
-              class="text-xs"
+              class="!py-1.5"
+              :class="[col.id === 'title' ? 'whitespace-normal max-w-md' : '']"
             >
               <template v-if="col.id === 'id'">
-                <div class="flex items-center gap-1.5">
+                <div class="flex items-center gap-1.5 pl-7">
                   <Tooltip v-if="change.malformed">
                     <TooltipTrigger as-child>
                       <svg
@@ -157,13 +159,13 @@ const toggleSort = (columnId: string) => {
                   <CopyableId
                     :value="change.id"
                     hover-icon
-                    class="text-xs text-foreground whitespace-nowrap"
+                    class="whitespace-nowrap"
                   />
                 </div>
               </template>
 
               <template v-else-if="col.id === 'title'">
-                <span class="block truncate max-w-[420px]">{{ change.title ?? '—' }}</span>
+                <span class="text-xs font-medium line-clamp-2 break-words">{{ change.title ?? '—' }}</span>
               </template>
 
               <template v-else-if="col.id === 'stage'">
@@ -175,17 +177,17 @@ const toggleSort = (columnId: string) => {
               </template>
 
               <template v-else-if="col.id === 'checks'">
-                <span class="tabular-nums">{{ change.checksPassed }}/{{ change.checksRequired }}</span>
+                <span class="text-xs tabular-nums">{{ change.checksPassed }}/{{ change.checksRequired }}</span>
               </template>
 
               <template v-else-if="col.id === 'review'">
-                <span class="text-muted-foreground">
+                <span class="text-xs text-muted-foreground">
                   {{ change.reviewStatus ? `${change.reviewStatus} (${change.reviewOpenFindings})` : '—' }}
                 </span>
               </template>
 
               <template v-else-if="col.id === 'revision'">
-                <span class="tabular-nums">{{ change.revision ?? '—' }}</span>
+                <span class="text-xs tabular-nums">{{ change.revision ?? '—' }}</span>
               </template>
             </TableCell>
           </TableRow>
