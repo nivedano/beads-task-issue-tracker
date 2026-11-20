@@ -42,9 +42,18 @@ pub fn grace_show(path: String, id: String) -> Result<GraceChangeDetail, String>
     let load = state::load_change(&id, &dir, in_closed_dir);
     let notes_md = fs::read_text_capped(&dir.join("notes.md"));
     let latest_results = latest_results(load.contract.as_ref(), &load.records.runs);
+    // The change directory as an absolute path (the frontend resolves logs and
+    // artifacts against it); forward slashes match the relative path fields.
+    // `strip_verbatim_prefix` drops the Windows `\\?\` form `canonicalize` adds.
+    let absolute_dir = project
+        .canonicalize()
+        .map_err(|error| format!("Cannot resolve {path}: {error}"))?
+        .join(&relative);
+    let absolute_dir = crate::strip_verbatim_prefix(&absolute_dir.to_string_lossy());
+    let absolute_dir = absolute_dir.replace('\\', "/");
     Ok(GraceChangeDetail {
         summary: load.summary,
-        dir: relative,
+        dir: absolute_dir,
         contract: load.contract,
         approvals: load.records.approvals,
         runs: load.records.runs,
@@ -62,6 +71,13 @@ pub fn grace_show(path: String, id: String) -> Result<GraceChangeDetail, String>
 #[command]
 pub fn grace_read_file(path: String, rel_path: String) -> Result<GraceFileContent, String> {
     fs::read_grace_file(Path::new(&path), &rel_path)
+}
+
+/// Opens one file inside the project's `.grace5/` with the OS default app.
+#[command]
+pub fn grace_open_file(path: String, rel_path: String) -> Result<(), String> {
+    let resolved = fs::resolve_grace_file(Path::new(&path), &rel_path)?;
+    fs::open_with_default_app(&resolved)
 }
 
 /// Whether the project's `.grace5` tree changed since the previous call.

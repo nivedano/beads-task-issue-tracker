@@ -5249,6 +5249,7 @@ pub fn run() {
             grace::grace_list,
             grace::grace_show,
             grace::grace_read_file,
+            grace::grace_open_file,
             grace::grace_check_changed,
         ])
         .run(tauri::generate_context!())

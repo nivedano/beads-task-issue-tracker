@@ -34,13 +34,16 @@ pub(crate) fn read_text_capped(path: &Path) -> Option<String> {
         .map(|(bytes, _, _)| String::from_utf8_lossy(&bytes).into_owned())
 }
 
-/// Reads a file inside `<project>/.grace5/`, refusing anything that resolves
-/// outside it (traversal, absolute paths, symlink escapes).
-pub fn read_grace_file(project: &Path, rel_path: &str) -> Result<GraceFileContent, String> {
+/// Resolves `rel_path` inside `<project>/.grace5/` to a canonical file path,
+/// refusing traversal, absolute paths, symlink escapes and non-file targets.
+pub fn resolve_grace_file(project: &Path, rel_path: &str) -> Result<PathBuf, String> {
     let root = project
         .join(".grace5")
         .canonicalize()
         .map_err(|error| format!("Cannot resolve .grace5: {error}"))?;
+    if Path::new(rel_path).is_absolute() {
+        return Err(format!("{rel_path} is outside .grace5"));
+    }
     let resolved = root
         .join(rel_path)
         .canonicalize()
@@ -48,6 +51,40 @@ pub fn read_grace_file(project: &Path, rel_path: &str) -> Result<GraceFileConten
     if !resolved.starts_with(&root) {
         return Err(format!("{rel_path} is outside .grace5"));
     }
+    // Check the type before opening: opening a FIFO would block on Unix.
+    let metadata =
+        fs::metadata(&resolved).map_err(|error| format!("Cannot read {rel_path}: {error}"))?;
+    if !metadata.is_file() {
+        return Err(format!("{rel_path} is not a file"));
+    }
+    Ok(resolved)
+}
+
+/// Opens a resolved file with the OS default application, mirroring
+/// `open_image_file` in `lib.rs` (the shell plugin's OpenScope only allows
+/// mailto/tel/http(s), so local paths go through the native opener).
+pub fn open_with_default_app(path: &Path) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    let spawned = std::process::Command::new("open").arg(path).spawn();
+
+    #[cfg(target_os = "windows")]
+    let spawned = crate::new_command("cmd")
+        .args(["/C", "start", ""])
+        .arg(path)
+        .spawn();
+
+    #[cfg(target_os = "linux")]
+    let spawned = std::process::Command::new("xdg-open").arg(path).spawn();
+
+    spawned
+        .map(|_| ())
+        .map_err(|error| format!("Failed to open {}: {error}", path.display()))
+}
+
+/// Reads a file inside `<project>/.grace5/`, refusing anything that resolves
+/// outside it (traversal, absolute paths, symlink escapes).
+pub fn read_grace_file(project: &Path, rel_path: &str) -> Result<GraceFileContent, String> {
+    let resolved = resolve_grace_file(project, rel_path)?;
     let (bytes, truncated, size_bytes) =
         capped_bytes(&resolved).map_err(|error| format!("Cannot read {rel_path}: {error}"))?;
     Ok(GraceFileContent {
@@ -367,7 +404,24 @@ mod tests {
             .unwrap_or_default()
             .contains("# Implementation notes"));
         assert_eq!(detail.briefs.len(), 1);
-        assert_eq!(detail.dir, ".grace5/changes/closed/C-0019-retire-briefs");
+        let expected_root = {
+            let canonical = dir.path().canonicalize().expect("tempdir resolves");
+            crate::strip_verbatim_prefix(&canonical.to_string_lossy()).replace('\\', "/")
+        };
+        assert!(
+            detail.dir.starts_with(&expected_root),
+            "dir must be absolute: {} (project root {})",
+            detail.dir,
+            expected_root
+        );
+        assert!(
+            detail
+                .dir
+                .ends_with(".grace5/changes/closed/C-0019-retire-briefs"),
+            "dir must end with the change path: {}",
+            detail.dir
+        );
+        assert!(!detail.dir.contains('\\'), "dir uses forward slashes: {}", detail.dir);
         assert!(detail.defects.is_empty(), "{:?}", detail.defects);
         assert_eq!(detail.latest_results.len(), 8);
         let ck6 = detail
@@ -400,6 +454,50 @@ mod tests {
         let dir = TempDir::new("dir-target");
         fs::create_dir_all(dir.path().join(".grace5").join("folder")).unwrap();
         assert!(read_grace_file(dir.path(), "folder").is_err());
+        assert!(resolve_grace_file(dir.path(), "folder").is_err());
+    }
+
+    #[test]
+    fn resolves_a_file_for_opening() {
+        let dir = TempDir::new("open-resolve");
+        write_fixture_change(dir.path());
+        let resolved = resolve_grace_file(
+            dir.path(),
+            "changes/closed/C-0019-retire-briefs/notes.md",
+        )
+        .expect("notes.md resolves for opening");
+        assert!(resolved.is_absolute(), "{resolved:?}");
+        assert!(resolved.ends_with("notes.md"));
+    }
+
+    #[test]
+    fn open_refuses_paths_outside_grace() {
+        let dir = TempDir::new("open-containment");
+        write_fixture_change(dir.path());
+        let outside = dir.path().join("outside.md");
+        fs::write(&outside, b"secret").unwrap();
+
+        assert!(resolve_grace_file(dir.path(), "../outside.md").is_err());
+        assert!(resolve_grace_file(dir.path(), outside.to_str().unwrap()).is_err());
+
+        let link = dir.path().join(".grace5").join("escape.md");
+        if symlink_file(&outside, &link).is_ok() {
+            assert!(
+                resolve_grace_file(dir.path(), "escape.md").is_err(),
+                "a symlink escaping .grace5 must be refused"
+            );
+        } else {
+            eprintln!("skipping symlink escape: cannot create a file symlink here");
+        }
+    }
+
+    #[test]
+    fn grace_open_file_refuses_before_opening() {
+        let dir = TempDir::new("open-refuse");
+        write_fixture_change(dir.path());
+        let project = dir.path().to_string_lossy().to_string();
+        assert!(crate::grace::grace_open_file(project.clone(), "../outside.md".to_string()).is_err());
+        assert!(crate::grace::grace_open_file(project, "changes".to_string()).is_err());
     }
 
     #[test]
