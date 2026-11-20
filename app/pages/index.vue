@@ -1438,13 +1438,13 @@ watch(
         <!-- Sidebar toggle -->
         <div
           v-show="!(isEditMode || isCreatingNew)"
-          class="p-2 border-b border-border flex items-center"
-          :class="isRightSidebarOpen ? 'justify-between' : 'justify-center'"
+          class="px-2 border-b border-border flex items-center"
+          :class="[TOP_ROW_CLASS, isRightSidebarOpen ? 'justify-between' : 'justify-center']"
         >
           <Button
             variant="ghost"
             size="icon"
-            class="h-8 w-8"
+            class="h-7 w-7"
             @click="isRightSidebarOpen = !isRightSidebarOpen"
           >
             <svg
