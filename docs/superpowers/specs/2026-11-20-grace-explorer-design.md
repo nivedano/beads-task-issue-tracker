@@ -1,6 +1,6 @@
 # GRACE Explorer — Design
 
-Date: 2026-11-20 · Status: approach approved by owner; doc pending approval · App: beads-task-issue-tracker (Nuxt 4 SPA + Tauri 2)
+Date: 2026-11-20 · Status: approved by owner 2026-11-20 (approach A, read-only, no cross-linking, kernel-equivalent authorization) · App: beads-task-issue-tracker (Nuxt 4 SPA + Tauri 2)
 
 ## Intent and why
 
@@ -68,11 +68,12 @@ New Rust module parses `.grace5/` directly (contracts, records, notes). The alte
 - Approach A with the stated tab semantics (strip only when two or more registries; single registry renders bare).
 - Read-only explorer.
 - No cross-linking for now.
+- Kernel-equivalent authorization (option a): `sha2` crate, raw-byte SHA-256 with CRLF→LF only, approval for the contract's current revision, the kernel's four values and branch order. The explorer must never disagree with `grace5 status` on authorization.
 
 ## Director calls (defaults the owner may reject)
 
 - **Web mode: grace commands are desktop-only**, throwing "only available in the desktop app" exactly like the bd commands in bd-api.ts. The `fs_list` server route still gains `hasGrace` so folder-picker badges work on web; the grace explorer itself shows a desktop-only notice in web mode.
-- **Authorization fidelity — PENDING OWNER DECISION (a)/(b).** (a) Kernel-equivalent authorization: add `sha2` crate; compute SHA-256 over the raw `contract.xml` bytes with ONLY `\r\n` pairs replaced by `\n`, byte-preserving (the kernel does a latin1 round-trip — never decode to a UTF-8 string first, non-ASCII contract text would mismatch); look up the approval record for the contract's CURRENT revision; branch order: no such approval → `unapproved`; decision `rejected` → `rejected`; recorded `contract-sha256` ≠ current hash → `altered after approval`; else `approved` (kernel refs: grace5 `src/contract.ts:86-89`, `src/state.ts:128-133`). (b) Revision-only approximation (`altered` when contract revision > approval revision), visibly labeled "approximate — run grace5 status". Under either option the authorization filter uses the same value set as the chosen rule.
+- Authorization is kernel-equivalent (owner decision): SHA-256 over the raw `contract.xml` bytes with ONLY `\r\n` pairs replaced by `\n`, byte-preserving (latin1 round-trip equivalent — never decode to a UTF-8 string first; non-ASCII contract text would mismatch); approval record looked up by the contract's CURRENT revision; branch order: no such approval → `unapproved`; decision `rejected` → `rejected`; recorded `contract-sha256` ≠ current hash → `altered after approval`; else `approved` (kernel refs: grace5 `src/contract.ts:86-89`, `src/state.ts:128-133`). The authorization filter uses exactly these four values.
 - Stage is lifecycle PROGRESS, not verdict: `closed` (close.xml exists) → `reviewed` (a completed review record exists) → `executing` (run records exist) → `approved` (authorization is approved) → `prepared` (contract exists, no approval for the current revision). Governing approval always means the approval record for the contract's current revision. Stage and authorization may legitimately differ (e.g. a reviewed change whose current revision was rejected): both are shown, neither hides the other; the stepper lights progress, the authorization badge shows authority. Check counts and review adequacy stay display-level — never re-verified.
 - Legacy `records/brief-<rev>.html` pages are part of the records model and timeline, listed with an open-externally action (raw HTML in the OS browser via the existing `openUrl` util); never rendered inline. Legacy approvals display `brief-sha256` when present.
 - Table columns: id, title (contract `title` attribute), stage, authorization, checks (latest passed/required counts), review (status + open findings count), revision. Default sort: id descending. Open changes shown by default; closed reachable via the open/closed filter (mirrors issues defaulting to open statuses).
