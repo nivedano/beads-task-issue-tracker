@@ -138,7 +138,19 @@ Beyond just viewing issues, this app is part of a broader development workflow p
    br --version
    ```
 
-The app runs `br` (resolved from `PATH`, or a custom binary path in its config file).
+The app runs `br` (resolved from `PATH`).
+
+### Custom `br` binary path
+
+To point the app at a specific `br` executable, set `cli_binary` in its config file,
+`com.beads.manager/settings.json`, under the platform config directory
+(`~/Library/Application Support` on macOS, `~/.config` on Linux, `%APPDATA%` on Windows):
+
+```json
+{ "cli_binary": "/path/to/br" }
+```
+
+This file is the supported entry point for a custom binary — there is no in-app setting for it.
 
 If you use an AI coding assistant (Claude Code, Cursor, etc.) to pilot your issues, configure its skills/commands to use `br`. The app reflects its changes in real time.
 

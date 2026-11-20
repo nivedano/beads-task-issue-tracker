@@ -923,21 +923,23 @@ fn load_config() -> AppConfig {
     AppConfig::default()
 }
 
-fn save_config(config: &AppConfig) -> Result<(), String> {
-    let path = get_config_path();
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|e| format!("Failed to create config directory: {}", e))?;
-    }
-    let json = serde_json::to_string_pretty(config)
-        .map_err(|e| format!("Failed to serialize config: {}", e))?;
-    fs::write(&path, json)
-        .map_err(|e| format!("Failed to write config: {}", e))?;
-    Ok(())
-}
-
 fn get_cli_binary() -> String {
     CLI_BINARY.lock().unwrap().clone()
+}
+
+/// Normalize the configured CLI binary. `br` is the only supported client, so a
+/// stale bare `"bd"` value from an older settings.json coerces to `br` (custom
+/// binary paths are respected as-is).
+fn normalize_cli_binary(configured: &str) -> String {
+    let trimmed = configured.trim();
+    if trimmed.is_empty() {
+        return "br".to_string();
+    }
+    if trimmed == "bd" {
+        log::warn!("[config] cli_binary \"bd\" is no longer supported; using \"br\"");
+        return "br".to_string();
+    }
+    trimmed.to_string()
 }
 
 // ============================================================================
@@ -1367,33 +1369,48 @@ async fn bd_repair_database(cwd: Option<String>) -> Result<RepairResult, String>
     std::fs::remove_file(beads_dir.join("beads.db-wal")).ok();
     log_info!("[bd_repair] Removed old database files");
 
-    // Test that the CLI can now work (it will recreate the database from JSONL)
-    let test_output = new_command(&get_cli_binary())
-        .args(&["list", "--limit=1", "--json"])
-        .current_dir(&working_dir)
-        .env("PATH", get_extended_path())
-        .env("BEADS_PATH", &working_dir)
-        .output();
+    // Verify the CLI can now work (it recreates the database from JSONL).
+    // br 0.7.6 may rebuild the database and still crash (stack overflow) on that
+    // first invocation, so a single failed probe is not a failed repair: retry once
+    // and accept success = probe ok, or the db exists and the retry probe ok.
+    let probe = || {
+        new_command(&get_cli_binary())
+            .args(&["list", "--limit=1", "--json"])
+            .current_dir(&working_dir)
+            .env("PATH", get_extended_path())
+            .env("BEADS_PATH", &working_dir)
+            .output()
+    };
 
-    match test_output {
-        Ok(output) if output.status.success() => {
-            log_info!("[bd_repair] Repair successful - database recreated");
-            Ok(RepairResult {
-                success: true,
-                message: "Database repaired successfully. Your issues have been restored from the backup file.".to_string(),
-                backup_path: Some(backup_path.to_string_lossy().to_string()),
-            })
-        }
-        Ok(output) => {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            log_error!("[bd_repair] Repair verification failed: {}", stderr);
-            Err(format!("Repair failed during verification: {}", stderr))
-        }
-        Err(e) => {
-            log_error!("[bd_repair] Failed to verify repair: {}", e);
-            Err(format!("Failed to verify repair: {}", e))
+    let mut last_error = String::new();
+    for attempt in 1..=2 {
+        match probe() {
+            Ok(output) if output.status.success() => {
+                log_info!("[bd_repair] Repair successful - database recreated (probe attempt {})", attempt);
+                return Ok(RepairResult {
+                    success: true,
+                    message: "Database repaired successfully. Your issues have been restored from the backup file.".to_string(),
+                    backup_path: Some(backup_path.to_string_lossy().to_string()),
+                });
+            }
+            Ok(output) => {
+                let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+                last_error = if stderr.is_empty() {
+                    format!("exit status {}", output.status)
+                } else {
+                    stderr
+                };
+                log_warn!("[bd_repair] Probe attempt {} failed: {}", attempt, last_error);
+            }
+            Err(e) => {
+                last_error = e.to_string();
+                log_warn!("[bd_repair] Probe attempt {} failed: {}", attempt, last_error);
+            }
         }
     }
+
+    log_error!("[bd_repair] Repair verification failed: {}", last_error);
+    Err(format!("Repair failed during verification: {}", last_error))
 }
 
 // ============================================================================
@@ -2713,74 +2730,6 @@ async fn get_bd_version() -> String {
     }
 }
 
-// ============================================================================
-// CLI Binary Configuration Commands
-// ============================================================================
-
-#[tauri::command]
-async fn get_cli_binary_path() -> String {
-    get_cli_binary()
-}
-
-#[tauri::command]
-async fn set_cli_binary_path(path: String) -> Result<String, String> {
-    let binary = if path.trim().is_empty() { "br".to_string() } else { path.trim().to_string() };
-
-    // Validate the binary first
-    let version = validate_cli_binary_internal(&binary)?;
-
-    // Update global state
-    *CLI_BINARY.lock().unwrap() = binary.clone();
-
-    // Persist to config file
-    let mut config = load_config();
-    config.cli_binary = binary.clone();
-    save_config(&config)?;
-
-    log_info!("[config] CLI binary set to: {} ({})", binary, version);
-    Ok(version)
-}
-
-#[tauri::command]
-async fn validate_cli_binary(path: String) -> Result<String, String> {
-    let binary = if path.trim().is_empty() { "br".to_string() } else { path.trim().to_string() };
-    validate_cli_binary_internal(&binary)
-}
-
-fn validate_cli_binary_internal(binary: &str) -> Result<String, String> {
-    // Security: reject shell metacharacters — Command::new() doesn't use a shell,
-    // but defense-in-depth prevents any future misuse
-    let forbidden = [';', '|', '&', '$', '`', '>', '<', '(', ')', '{', '}', '!', '\n', '\r'];
-    if binary.chars().any(|c| forbidden.contains(&c)) {
-        return Err("Invalid binary path: contains shell metacharacters".to_string());
-    }
-    if binary.contains("..") {
-        return Err("Invalid binary path: directory traversal not allowed".to_string());
-    }
-
-    match new_command(binary)
-        .arg("--version")
-        .env("PATH", get_extended_path())
-        .output()
-    {
-        Ok(output) if output.status.success() => {
-            let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if version.is_empty() {
-                Err(format!("'{}' returned empty version output", binary))
-            } else {
-                Ok(version)
-            }
-        }
-        Ok(output) => {
-            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-            Err(format!("'{}' failed: {}", binary, if stderr.is_empty() { "unknown error".to_string() } else { stderr }))
-        }
-        Err(e) => {
-            Err(format!("'{}' not found or not executable: {}", binary, e))
-        }
-    }
-}
-
 #[tauri::command]
 async fn open_image_file(path: String) -> Result<(), String> {
     log_info!("[open_image_file] Opening: {}", path);
@@ -3992,10 +3941,11 @@ pub fn run() {
             log::info!("=== Beads Task-Issue Tracker starting ===");
             log::info!("[startup] Extended PATH: {}", get_extended_path());
 
-            // Load config and set the CLI binary (br by default)
+            // Load config and set the CLI binary (br by default; a stale bd value coerces to br)
             let config = load_config();
-            log::info!("[startup] CLI binary: {}", config.cli_binary);
-            *CLI_BINARY.lock().unwrap() = config.cli_binary.clone();
+            let binary = normalize_cli_binary(&config.cli_binary);
+            log::info!("[startup] CLI binary: {}", binary);
+            *CLI_BINARY.lock().unwrap() = binary;
 
             Ok(())
         })
@@ -4021,9 +3971,6 @@ pub fn run() {
             get_log_path_string,
             log_frontend,
             get_bd_version,
-            get_cli_binary_path,
-            set_cli_binary_path,
-            validate_cli_binary,
             bd_update,
             bd_close,
             bd_search,

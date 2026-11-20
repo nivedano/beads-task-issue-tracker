@@ -129,13 +129,16 @@ export function useIssues() {
       const allIssues = await bdList({ path, includeAll: true })
       const newIssues = deduplicateIssues(allIssues || [])
 
-      // Build parent-child relationships from the data we already have (no bdShow needed)
+      // Build parent-child relationships from the data we already have.
+      // `br list --json` omits the `parent` field (only `br show` returns it), so
+      // child ids encoded with dot notation are the list path's parent source.
       const issueMap = new Map(newIssues.map(i => [i.id, i]))
 
-      // 1. Enrich explicit parents with full details from loaded data
+      // 1. Fill in parent details (explicit field first, dot notation fallback)
       for (const issue of newIssues) {
-        if (!issue.parent?.id) continue
-        const parentIssue = issueMap.get(issue.parent.id)
+        const parentId = getParentIdFromIssue(issue)
+        if (!parentId) continue
+        const parentIssue = issueMap.get(parentId)
         if (parentIssue) {
           issue.parent = {
             id: parentIssue.id,
@@ -146,14 +149,14 @@ export function useIssues() {
         }
       }
 
-      // 2. Build children lists for epics from child issues that reference them
+      // 2. Build children lists for epics from the resolved parent ids
       const childrenByParent = new Map<string, Array<{ id: string; title: string; status: typeof newIssues[0]['status']; priority: typeof newIssues[0]['priority'] }>>()
       for (const issue of newIssues) {
-        if (issue.parent?.id) {
-          const list = childrenByParent.get(issue.parent.id) || []
-          list.push({ id: issue.id, title: issue.title, status: issue.status, priority: issue.priority })
-          childrenByParent.set(issue.parent.id, list)
-        }
+        const parentId = getParentIdFromIssue(issue)
+        if (!parentId) continue
+        const list = childrenByParent.get(parentId) || []
+        list.push({ id: issue.id, title: issue.title, status: issue.status, priority: issue.priority })
+        childrenByParent.set(parentId, list)
       }
       for (const [epicId, children] of childrenByParent) {
         const epic = issueMap.get(epicId)
@@ -234,13 +237,14 @@ export function useIssues() {
       const mergedIssues = [...(data.openIssues || []), ...(data.closedIssues || [])]
       const newIssues = deduplicateIssues(mergedIssues)
 
-      // Build parent-child relationships from the data we already have (no bdShow needed)
+      // Build parent-child relationships from the poll data (which omits `parent`);
+      // dot-notation child ids provide the parent id on this path.
       const issueMap = new Map(newIssues.map(i => [i.id, i]))
 
-      // Enrich explicit parents with full details from loaded data
       for (const issue of newIssues) {
-        if (!issue.parent?.id) continue
-        const parentIssue = issueMap.get(issue.parent.id)
+        const parentId = getParentIdFromIssue(issue)
+        if (!parentId) continue
+        const parentIssue = issueMap.get(parentId)
         if (parentIssue) {
           issue.parent = { id: parentIssue.id, title: parentIssue.title, status: parentIssue.status, priority: parentIssue.priority }
         }
@@ -248,11 +252,11 @@ export function useIssues() {
 
       const childrenByParent = new Map<string, Array<{ id: string; title: string; status: typeof newIssues[0]['status']; priority: typeof newIssues[0]['priority'] }>>()
       for (const issue of newIssues) {
-        if (issue.parent?.id) {
-          const list = childrenByParent.get(issue.parent.id) || []
-          list.push({ id: issue.id, title: issue.title, status: issue.status, priority: issue.priority })
-          childrenByParent.set(issue.parent.id, list)
-        }
+        const parentId = getParentIdFromIssue(issue)
+        if (!parentId) continue
+        const list = childrenByParent.get(parentId) || []
+        list.push({ id: issue.id, title: issue.title, status: issue.status, priority: issue.priority })
+        childrenByParent.set(parentId, list)
       }
       for (const [epicId, children] of childrenByParent) {
         const epic = issueMap.get(epicId)
@@ -421,16 +425,18 @@ export function useIssues() {
         return null
       }
 
-      // Enrich parent/children from loaded issues list
-      if (data.parent?.id) {
-        const parentIssue = issues.value.find(i => i.id === data.parent!.id)
+      // Enrich parent/children from loaded issues list. `br show` returns `parent`,
+      // and dot notation covers issues loaded from the parent-less list path.
+      const parentId = getParentIdFromIssue(data)
+      if (parentId) {
+        const parentIssue = issues.value.find(i => i.id === parentId)
         if (parentIssue) {
           data.parent = { id: parentIssue.id, title: parentIssue.title, status: parentIssue.status, priority: parentIssue.priority }
         }
       }
       if (!data.children?.length) {
         const children = issues.value
-          .filter(i => i.parent?.id === data.id)
+          .filter(i => getParentIdFromIssue(i) === data.id)
           .map(i => ({ id: i.id, title: i.title, status: i.status, priority: i.priority }))
         if (children.length) {
           data.children = children

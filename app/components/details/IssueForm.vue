@@ -62,6 +62,11 @@ const form = reactive({
   specId: props.issue?.specId || '',
 })
 
+// Parent submissions must be explicit: `br list` does not return `parent`, so an
+// untouched selector may merely mean "not loaded". Only send `--parent` (including
+// the empty detach value) once the user changed the selector in this edit session.
+const parentTouched = ref(false)
+
 watch(
   () => props.issue,
   (newIssue) => {
@@ -80,6 +85,7 @@ watch(
       form.workingNotes = newIssue.workingNotes || ''
       form.parent = newIssue.parent?.id || ''
       form.specId = newIssue.specId || ''
+      parentTouched.value = false
     }
   }
 )
@@ -148,14 +154,17 @@ const parentSelectValue = computed({
   get: () => form.parent || NO_PARENT_VALUE,
   set: (val: string) => {
     form.parent = val === NO_PARENT_VALUE ? '' : val
+    parentTouched.value = true
   }
 })
 
 const handleSubmit = () => {
   // Determine parent value:
-  // - Empty string "" means detach (pass empty to the CLI)
-  // - Non-empty string means attach to that epic
+  // - New issues always submit the seeded/default parent
+  // - Edits only submit `--parent` when the selector was explicitly changed
+  //   (empty string detaches, epic ID attaches); otherwise the parent is untouched
   const parentValue = form.parent.trim()
+  const parent = props.isNew || parentTouched.value ? parentValue : undefined
 
   const payload: UpdateIssuePayload = {
     title: form.title,
@@ -170,7 +179,7 @@ const handleSubmit = () => {
     designNotes: form.designNotes,
     acceptanceCriteria: form.acceptanceCriteria,
     workingNotes: form.workingNotes,
-    parent: parentValue, // Empty string to detach, epic ID to attach
+    parent,
     specId: form.specId || undefined,
   }
   emit('save', payload)
