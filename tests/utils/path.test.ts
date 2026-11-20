@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { splitPath, getPathSeparator, getFolderName, getParentPath, isRootPath, getPathCrumbs, splitRoot } from '~/utils/path'
+import { splitPath, getPathSeparator, getFolderName, getParentPath, isRootPath, getPathCrumbs, splitRoot, joinPath } from '~/utils/path'
 
 // ---------------------------------------------------------------------------
 // splitPath
@@ -209,5 +209,43 @@ describe('getPathCrumbs', () => {
 
   it('returns an empty list for an empty path', () => {
     expect(getPathCrumbs('')).toEqual([])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// joinPath
+// ---------------------------------------------------------------------------
+describe('joinPath', () => {
+  it('anchors a bare drive letter to its root', () => {
+    expect(joinPath('C:', '.beads')).toBe('C:\\.beads')
+  })
+
+  it('joins onto a drive root', () => {
+    expect(joinPath('C:\\', '.beads')).toBe('C:\\.beads')
+  })
+
+  it('joins onto the Unix root', () => {
+    expect(joinPath('/', '.beads')).toBe('/.beads')
+  })
+
+  it('joins onto a UNC share root', () => {
+    expect(joinPath('\\\\srv\\share', 'child')).toBe('\\\\srv\\share\\child')
+  })
+
+  it('joins onto a nested Windows path', () => {
+    expect(joinPath('C:\\dev\\app', '.grace5')).toBe('C:\\dev\\app\\.grace5')
+  })
+
+  it('joins onto a nested Unix path', () => {
+    expect(joinPath('/home/dev', '.grace5')).toBe('/home/dev/.grace5')
+  })
+
+  it('does not double the separator when the base already ends with one', () => {
+    expect(joinPath('C:\\dev\\app\\', '.beads')).toBe('C:\\dev\\app\\.beads')
+    expect(joinPath('/srv/app/', '.beads')).toBe('/srv/app/.beads')
+  })
+
+  it('returns the child when the base is empty', () => {
+    expect(joinPath('', 'child')).toBe('child')
   })
 })
