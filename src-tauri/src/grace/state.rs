@@ -3,6 +3,7 @@
 //! Authorization and stage mirror the kernel (`grace5/src/contract.ts`,
 //! `grace5/src/state.ts`); the explorer never re-verifies verdicts.
 
+use std::fmt::Write;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -37,7 +38,7 @@ pub fn contract_sha256(bytes: &[u8]) -> String {
     let digest = hasher.finalize();
     let mut hex = String::with_capacity(digest.len() * 2);
     for byte in digest {
-        hex.push_str(&format!("{byte:02x}"));
+        let _ = write!(hex, "{byte:02x}");
     }
     hex
 }
@@ -135,7 +136,12 @@ pub fn list(path: &Path) -> GraceListResult {
     }
     changes.sort_by(|left, right| left.id.cmp(&right.id));
 
-    let closed_count = changes.iter().filter(|change| change.closed).count() as u32;
+    // Scope semantics: a change on the closed side is closed for filtering even
+    // when its close record is missing (that case is flagged malformed).
+    let closed_count = changes
+        .iter()
+        .filter(|change| change.closed || change.in_closed_dir)
+        .count() as u32;
     let open_count = changes.len() as u32 - closed_count;
     GraceListResult {
         has_grace,
@@ -205,7 +211,16 @@ fn summarize_change(id: &str, dir: &Path, in_closed_dir: bool) -> GraceChangeSum
                 Err(error) => (None, Some(hash), Some(error)),
             }
         }
-        Err(_) => (None, None, None),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => (
+            None,
+            None,
+            Some("contract.xml is missing".to_string()),
+        ),
+        Err(error) => (
+            None,
+            None,
+            Some(format!("contract.xml cannot be read: {error}")),
+        ),
     };
     let (records, defects) = parse_records(dir, id);
     let location_error = if in_closed_dir && !records.close_exists {
@@ -236,8 +251,13 @@ fn subdirectories(dir: &Path) -> Vec<PathBuf> {
     let mut paths = Vec::new();
     if let Ok(entries) = fs::read_dir(dir) {
         for entry in entries.filter_map(Result::ok) {
-            if entry.file_type().map(|kind| kind.is_dir()).unwrap_or(false) {
-                paths.push(entry.path());
+            let path = entry.path();
+            // Follow symlinks, as the kernel's statSync does.
+            if fs::metadata(&path)
+                .map(|metadata| metadata.is_dir())
+                .unwrap_or(false)
+            {
+                paths.push(path);
             }
         }
     }
@@ -700,15 +720,101 @@ mod tests {
 
         let result = list(root);
         let summary = result.changes.first().expect("change is listed");
+        // The change is not closed (no close record), but it lives on the closed side.
         assert!(!summary.closed);
+        assert!(summary.in_closed_dir);
         assert_eq!(summary.stage, "prepared");
         assert!(summary
             .malformed
             .as_deref()
             .unwrap_or_default()
             .contains("close.xml"));
-        assert_eq!(result.open_count, 1);
-        assert_eq!(result.closed_count, 0);
+        assert_eq!(result.open_count, 0);
+        assert_eq!(result.closed_count, 1);
+    }
+
+    #[test]
+    fn flags_a_change_without_a_contract() {
+        let dir = TempDir::new("no-contract");
+        let root = dir.path();
+        let change = root
+            .join(".grace5")
+            .join("changes")
+            .join("C-0045-no-contract");
+        fs::create_dir_all(change.join("records")).unwrap();
+        fs::write(
+            change.join("records").join("run-1.xml"),
+            br#"<Run change="C-0045-no-contract" revision="1" contract-sha256="x" n="1" run-id="r" started="" ended="" status="completed" start="true" source-revision="" dirty="false" candidate="" kernel="grace5 0.9.0"/>"#,
+        )
+        .unwrap();
+
+        let result = list(root);
+        let summary = result.changes.first().expect("change is listed");
+        assert!(summary.title.is_none());
+        assert!(summary.revision.is_none());
+        assert_eq!(summary.authorization, "unapproved");
+        assert_eq!(summary.stage, "executing");
+        assert_eq!(
+            summary.malformed.as_deref(),
+            Some("contract.xml is missing")
+        );
+    }
+
+    #[test]
+    fn flags_a_contract_that_cannot_be_read() {
+        let dir = TempDir::new("unreadable-contract");
+        let root = dir.path();
+        let change = root
+            .join(".grace5")
+            .join("changes")
+            .join("C-0046-unreadable-contract");
+        fs::create_dir_all(change.join("contract.xml")).unwrap();
+
+        let result = list(root);
+        let summary = result.changes.first().expect("change is listed");
+        let malformed = summary.malformed.as_deref().unwrap_or_default();
+        assert!(
+            malformed.starts_with("contract.xml cannot be read"),
+            "{malformed}"
+        );
+    }
+
+    #[cfg(unix)]
+    fn symlink_dir(target: &Path, link: &Path) -> std::io::Result<()> {
+        std::os::unix::fs::symlink(target, link)
+    }
+
+    #[cfg(windows)]
+    fn symlink_dir(target: &Path, link: &Path) -> std::io::Result<()> {
+        std::os::windows::fs::symlink_dir(target, link)
+    }
+
+    #[test]
+    fn lists_a_change_directory_reached_through_a_symlink() {
+        let dir = TempDir::new("symlinked-change");
+        let root = dir.path();
+        let changes = root.join(".grace5").join("changes");
+        fs::create_dir_all(&changes).unwrap();
+        let target = root.join("C-0050-symlinked");
+        write_contract(
+            &target,
+            br#"<Contract id="C-0050-symlinked" revision="1" title="Linked"><Problem>p</Problem></Contract>"#,
+        );
+        let link = changes.join("C-0050-symlinked");
+        if symlink_dir(&target, &link).is_err() {
+            eprintln!("skipping: this platform cannot create a directory symlink here");
+            return;
+        }
+
+        let result = list(root);
+        assert_eq!(
+            result
+                .changes
+                .iter()
+                .filter(|change| change.id == "C-0050-symlinked")
+                .count(),
+            1
+        );
     }
 
     #[test]
