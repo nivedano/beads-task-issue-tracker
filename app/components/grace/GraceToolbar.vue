@@ -87,10 +87,15 @@ onClickOutside(columnPanelRef, (event) => {
 }, { ignore: [columnTriggerRef] })
 
 const toggleColumn = (columnId: string, checked: boolean) => {
+  if (columnId === 'id') return
   emit('update:columns', props.columns.map(col =>
     col.id === columnId ? { ...col, visible: checked } : col
   ))
 }
+
+// The ID column is the identity column (it also carries the malformed-defect
+// signal, which must never be hideable), so it is not offered here.
+const configurableColumns = computed(() => props.columns.filter(col => col.id !== 'id'))
 </script>
 
 <template>
@@ -184,7 +189,7 @@ const toggleColumn = (columnId: string, checked: boolean) => {
           <div class="h-px bg-border" />
           <div class="py-1">
             <div
-              v-for="column in columns"
+              v-for="column in configurableColumns"
               :key="column.id"
               class="flex items-center gap-2 px-2 py-1 text-xs hover:bg-accent/50 rounded-sm mx-1"
             >

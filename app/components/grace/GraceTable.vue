@@ -114,61 +114,61 @@ const toggleSort = (columnId: string) => {
             :class="selectedId === change.id ? 'bg-accent/50 hover:bg-accent/70' : 'hover:bg-muted/50'"
             @click="emit('select', change)"
           >
-          <TableCell
-            v-for="col in visibleColumns"
-            :key="col.id"
-            class="text-xs"
-          >
-            <template v-if="col.id === 'id'">
-              <div class="flex items-center gap-1.5">
-                <Tooltip v-if="change.malformed">
-                  <TooltipTrigger as-child>
-                    <svg
-                      class="w-3.5 h-3.5 shrink-0 text-destructive"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                    >
-                      <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-                      <line x1="12" y1="9" x2="12" y2="13" />
-                      <line x1="12" y1="17" x2="12.01" y2="17" />
-                    </svg>
-                  </TooltipTrigger>
-                  <TooltipContent side="top">
-                    <p class="text-xs max-w-xs">{{ change.malformed }}</p>
-                  </TooltipContent>
-                </Tooltip>
-                <span class="font-mono whitespace-nowrap">{{ change.id }}</span>
-              </div>
-            </template>
+            <TableCell
+              v-for="col in visibleColumns"
+              :key="col.id"
+              class="text-xs"
+            >
+              <template v-if="col.id === 'id'">
+                <div class="flex items-center gap-1.5">
+                  <Tooltip v-if="change.malformed">
+                    <TooltipTrigger as-child>
+                      <svg
+                        class="w-3.5 h-3.5 shrink-0 text-destructive"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                      >
+                        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                        <line x1="12" y1="9" x2="12" y2="13" />
+                        <line x1="12" y1="17" x2="12.01" y2="17" />
+                      </svg>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">
+                      <p class="text-xs max-w-xs">{{ change.malformed }}</p>
+                    </TooltipContent>
+                  </Tooltip>
+                  <span class="font-mono whitespace-nowrap">{{ change.id }}</span>
+                </div>
+              </template>
 
-            <template v-else-if="col.id === 'title'">
-              <span class="block truncate max-w-[420px]">{{ change.title ?? '—' }}</span>
-            </template>
+              <template v-else-if="col.id === 'title'">
+                <span class="block truncate max-w-[420px]">{{ change.title ?? '—' }}</span>
+              </template>
 
-            <template v-else-if="col.id === 'stage'">
-              <GraceStageBadge :stage="change.stage" size="sm" />
-            </template>
+              <template v-else-if="col.id === 'stage'">
+                <GraceStageBadge :stage="change.stage" size="sm" />
+              </template>
 
-            <template v-else-if="col.id === 'authorization'">
-              <GraceAuthorizationBadge :authorization="change.authorization" size="sm" />
-            </template>
+              <template v-else-if="col.id === 'authorization'">
+                <GraceAuthorizationBadge :authorization="change.authorization" size="sm" />
+              </template>
 
-            <template v-else-if="col.id === 'checks'">
-              <span class="tabular-nums">{{ change.checksPassed }}/{{ change.checksRequired }}</span>
-            </template>
+              <template v-else-if="col.id === 'checks'">
+                <span class="tabular-nums">{{ change.checksPassed }}/{{ change.checksRequired }}</span>
+              </template>
 
-            <template v-else-if="col.id === 'review'">
-              <span class="text-muted-foreground">
-                {{ change.reviewStatus ? `${change.reviewStatus} (${change.reviewOpenFindings})` : '—' }}
-              </span>
-            </template>
+              <template v-else-if="col.id === 'review'">
+                <span class="text-muted-foreground">
+                  {{ change.reviewStatus ? `${change.reviewStatus} (${change.reviewOpenFindings})` : '—' }}
+                </span>
+              </template>
 
-            <template v-else-if="col.id === 'revision'">
-              <span class="tabular-nums">{{ change.revision ?? '—' }}</span>
-            </template>
-          </TableCell>
+              <template v-else-if="col.id === 'revision'">
+                <span class="tabular-nums">{{ change.revision ?? '—' }}</span>
+              </template>
+            </TableCell>
           </TableRow>
         </template>
       </TableBody>

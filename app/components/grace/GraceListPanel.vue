@@ -40,6 +40,17 @@ const emit = defineEmits<{
 
 const columns = useProjectStorage<ColumnConfig[]>('grace:columns', DEFAULT_COLUMNS)
 
+// The identity column is always rendered first and visible: it carries the
+// malformed-defect signal, which column config must never be able to hide.
+// Also reconciles stored configs from older sessions that hid it.
+const tableColumns = computed<ColumnConfig[]>(() => {
+  const idColumn = columns.value.find(col => col.id === 'id') ?? DEFAULT_COLUMNS[0]!
+  return [
+    { ...idColumn, visible: true },
+    ...columns.value.filter(col => col.id !== 'id'),
+  ]
+})
+
 const toolbarRef = ref<InstanceType<typeof GraceToolbar> | null>(null)
 
 const focusSearch = () => {
@@ -136,7 +147,7 @@ const handleSort = (field: GraceSortField, direction: 'asc' | 'desc') => {
 
     <GraceTable
       :changes="filteredChanges"
-      :columns="columns"
+      :columns="tableColumns"
       :selected-id="selectedId"
       :sort-field="sortField"
       :sort-direction="sortDirection"
