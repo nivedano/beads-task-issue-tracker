@@ -22,7 +22,7 @@ const props = defineProps<{
 
 defineEmits<{
   toggle: [stage: GraceStage]
-  'update:open': [value: boolean]
+  close: []
 }>()
 
 const isSelected = (stage: GraceStage) => props.selectedStages.includes(stage)
@@ -30,7 +30,7 @@ const isSelected = (stage: GraceStage) => props.selectedStages.includes(stage)
 
 <template>
   <Tooltip>
-    <DropdownMenu :open="open" :modal="false" @update:open="$emit('update:open', $event)">
+    <DropdownMenu :open="open" :modal="false">
       <TooltipTrigger as-child>
         <DropdownMenuTrigger as-child>
           <Button variant="outline" size="sm" class="h-8 text-xs gap-1">
@@ -55,7 +55,7 @@ const isSelected = (stage: GraceStage) => props.selectedStages.includes(stage)
         </DropdownMenuTrigger>
       </TooltipTrigger>
       <TooltipContent>Filter by stage</TooltipContent>
-      <DropdownMenuContent align="start" class="w-44">
+      <DropdownMenuContent align="start" class="w-44" @escape-key-down="$emit('close')">
         <DropdownMenuCheckboxItem
           v-for="stage in graceStageLadder"
           :key="stage"

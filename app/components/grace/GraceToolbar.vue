@@ -67,13 +67,6 @@ const handleFilterClick = (filter: FilterType) => {
   activeFilter.value = activeFilter.value === filter ? null : filter
 }
 
-// Close-only: the dropdowns are controlled, so Reka's own close requests
-// (item select, Escape, outside click) arrive here. Ignoring `true` keeps
-// @pointerdown.capture the sole opener and avoids fighting it.
-const closeFilter = (open: boolean) => {
-  if (!open) activeFilter.value = null
-}
-
 // Column settings popover (mirrors issues/ColumnConfig.vue without drag-reorder)
 const isColumnPanelOpen = ref(false)
 const columnPanelRef = ref<HTMLElement | null>(null)
@@ -120,29 +113,44 @@ const configurableColumns = computed(() => props.columns.filter(col => col.id !=
 
       <!-- Filter dropdowns (order matches table columns) -->
       <div ref="filterButtonsRef" class="flex items-center gap-2">
-        <div @pointerdown.capture="handleFilterClick('stage')">
+        <div
+          @pointerdown.capture="handleFilterClick('stage')"
+          @keydown.enter.prevent="handleFilterClick('stage')"
+          @keydown.space.prevent="handleFilterClick('stage')"
+          @keydown.down.prevent="handleFilterClick('stage')"
+        >
           <StageFilterDropdown
             :selected-stages="selectedStages"
             :open="activeFilter === 'stage'"
-            @update:open="closeFilter"
+            @close="activeFilter = null"
             @toggle="emit('toggleStage', $event)"
           />
         </div>
 
-        <div @pointerdown.capture="handleFilterClick('authorization')">
+        <div
+          @pointerdown.capture="handleFilterClick('authorization')"
+          @keydown.enter.prevent="handleFilterClick('authorization')"
+          @keydown.space.prevent="handleFilterClick('authorization')"
+          @keydown.down.prevent="handleFilterClick('authorization')"
+        >
           <AuthorizationFilterDropdown
             :selected-authorizations="selectedAuthorizations"
             :open="activeFilter === 'authorization'"
-            @update:open="closeFilter"
+            @close="activeFilter = null"
             @toggle="emit('toggleAuthorization', $event)"
           />
         </div>
 
-        <div @pointerdown.capture="handleFilterClick('scope')">
+        <div
+          @pointerdown.capture="handleFilterClick('scope')"
+          @keydown.enter.prevent="handleFilterClick('scope')"
+          @keydown.space.prevent="handleFilterClick('scope')"
+          @keydown.down.prevent="handleFilterClick('scope')"
+        >
           <ScopeFilterDropdown
             :scope="scope"
             :open="activeFilter === 'scope'"
-            @update:open="closeFilter"
+            @close="activeFilter = null"
             @select="emit('selectScope', $event)"
           />
         </div>

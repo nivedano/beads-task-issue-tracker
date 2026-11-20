@@ -21,7 +21,7 @@ defineProps<{
 
 defineEmits<{
   select: [scope: GraceScope]
-  'update:open': [value: boolean]
+  close: []
 }>()
 
 const scopeOptions: { value: GraceScope, label: string }[] = [
@@ -33,7 +33,7 @@ const scopeOptions: { value: GraceScope, label: string }[] = [
 
 <template>
   <Tooltip>
-    <DropdownMenu :open="open" :modal="false" @update:open="$emit('update:open', $event)">
+    <DropdownMenu :open="open" :modal="false">
       <TooltipTrigger as-child>
         <DropdownMenuTrigger as-child>
           <Button variant="outline" size="sm" class="h-8 text-xs gap-1">
@@ -52,8 +52,11 @@ const scopeOptions: { value: GraceScope, label: string }[] = [
         </DropdownMenuTrigger>
       </TooltipTrigger>
       <TooltipContent>Filter by scope</TooltipContent>
-      <DropdownMenuContent align="start" class="w-36">
-        <DropdownMenuRadioGroup :model-value="scope" @update:model-value="$emit('select', $event as GraceScope)">
+      <DropdownMenuContent align="start" class="w-36" @escape-key-down="$emit('close')">
+        <DropdownMenuRadioGroup
+          :model-value="scope"
+          @update:model-value="$emit('select', $event as GraceScope); $emit('close')"
+        >
           <DropdownMenuRadioItem
             v-for="opt in scopeOptions"
             :key="opt.value"

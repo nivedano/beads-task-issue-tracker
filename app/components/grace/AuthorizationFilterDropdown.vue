@@ -21,7 +21,7 @@ const props = defineProps<{
 
 defineEmits<{
   toggle: [authorization: GraceAuthorization]
-  'update:open': [value: boolean]
+  close: []
 }>()
 
 const authorizationOptions: GraceAuthorization[] = [
@@ -36,7 +36,7 @@ const isSelected = (authorization: GraceAuthorization) => props.selectedAuthoriz
 
 <template>
   <Tooltip>
-    <DropdownMenu :open="open" :modal="false" @update:open="$emit('update:open', $event)">
+    <DropdownMenu :open="open" :modal="false">
       <TooltipTrigger as-child>
         <DropdownMenuTrigger as-child>
           <Button variant="outline" size="sm" class="h-8 text-xs gap-1">
@@ -61,7 +61,7 @@ const isSelected = (authorization: GraceAuthorization) => props.selectedAuthoriz
         </DropdownMenuTrigger>
       </TooltipTrigger>
       <TooltipContent>Filter by authorization</TooltipContent>
-      <DropdownMenuContent align="start" class="w-56">
+      <DropdownMenuContent align="start" class="w-56" @escape-key-down="$emit('close')">
         <DropdownMenuCheckboxItem
           v-for="authorization in authorizationOptions"
           :key="authorization"
