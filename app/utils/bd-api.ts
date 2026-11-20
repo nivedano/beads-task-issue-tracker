@@ -891,6 +891,14 @@ export async function graceCheckChanged(path: string): Promise<boolean> {
   throw new Error('GRACE explorer is only available in the desktop app')
 }
 
+/** Open a `.grace5`-relative artifact with the system default application. */
+export async function graceOpenFile(path: string, relPath: string): Promise<void> {
+  if (isTauri()) {
+    return invoke<void>('grace_open_file', { path, relPath })
+  }
+  throw new Error('GRACE explorer is only available in the desktop app')
+}
+
 // ============================================================================
 // Update Checker API
 // ============================================================================

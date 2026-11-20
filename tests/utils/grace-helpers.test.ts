@@ -4,6 +4,8 @@ import {
   sortGraceChanges,
   graceStats,
   resolveExplorerTab,
+  graceLocation,
+  toGraceRelative,
   type GraceFilters,
 } from '~/utils/grace-helpers'
 import type { GraceChangeSummary } from '~/types/grace'
@@ -273,5 +275,64 @@ describe('resolveExplorerTab', () => {
   it('renders no explorer when neither registry exists', () => {
     expect(resolveExplorerTab('grace', { hasBeads: false, hasGrace: false }))
       .toEqual({ tab: null, showStrip: false })
+  })
+})
+
+// ---------------------------------------------------------------------------
+// graceLocation / toGraceRelative
+// ---------------------------------------------------------------------------
+describe('graceLocation', () => {
+  it('splits an absolute Windows change dir into project root and change prefix', () => {
+    expect(graceLocation('D:/p/.grace5/changes/closed/C-x')).toEqual({
+      projectPath: 'D:/p',
+      changePrefix: ['changes', 'closed', 'C-x'],
+    })
+  })
+
+  it('splits an absolute Windows change dir written with backslashes', () => {
+    expect(graceLocation('D:\\p\\.grace5\\changes\\C-x')).toEqual({
+      projectPath: 'D:/p',
+      changePrefix: ['changes', 'C-x'],
+    })
+  })
+
+  it('splits an absolute POSIX change dir', () => {
+    expect(graceLocation('/srv/p/.grace5/changes/C-x')).toEqual({
+      projectPath: '/srv/p',
+      changePrefix: ['changes', 'C-x'],
+    })
+  })
+
+  it('splits at the .grace5 segment, not at a .grace5 substring', () => {
+    expect(graceLocation('D:/my.grace5repo/.grace5/changes/C-x')).toEqual({
+      projectPath: 'D:/my.grace5repo',
+      changePrefix: ['changes', 'C-x'],
+    })
+  })
+
+  it('returns null for relative or empty dirs', () => {
+    expect(graceLocation('changes/closed/C-x')).toBeNull()
+    expect(graceLocation('.grace5/changes/C-x')).toBeNull()
+    expect(graceLocation('')).toBeNull()
+    expect(graceLocation(null)).toBeNull()
+  })
+})
+
+describe('toGraceRelative', () => {
+  const location = graceLocation('D:/p/.grace5/changes/closed/C-x')!
+
+  it('composes a run log path below .grace5', () => {
+    expect(toGraceRelative(location, 'records/logs/run-1/CK1.log'))
+      .toBe('changes/closed/C-x/records/logs/run-1/CK1.log')
+  })
+
+  it('normalizes backslash separators in the recorded path', () => {
+    expect(toGraceRelative(location, 'records\\run-1.xml'))
+      .toBe('changes/closed/C-x/records/run-1.xml')
+  })
+
+  it('returns null without a location or a path', () => {
+    expect(toGraceRelative(null, 'records/run-1.xml')).toBeNull()
+    expect(toGraceRelative(location, '')).toBeNull()
   })
 })

@@ -102,6 +102,47 @@ export function graceStats(changes: GraceChangeSummary[]): { open: number; close
 }
 
 /**
+ * Split an absolute change directory inside `.grace5` into the project root
+ * (what the `grace_*` commands take as `path`) and the change's segments below
+ * `.grace5` (the prefix of any `relPath` those commands take).
+ *
+ * `D:/p/.grace5/changes/closed/C-x` → { projectPath: 'D:/p', changePrefix: ['changes','closed','C-x'] }
+ *
+ * Returns null when the dir is missing, relative, or has no `.grace5` segment —
+ * callers must then surface an error instead of calling the API with ''.
+ */
+export function graceLocation(dir: string | null | undefined): { projectPath: string, changePrefix: string[] } | null {
+  if (!dir) return null
+
+  const parts = dir.split(/[/\\]/)
+  const index = parts.lastIndexOf('.grace5')
+  // A `.grace5` segment in position 0 means a relative dir with no project root.
+  if (index <= 0) return null
+
+  const projectPath = parts.slice(0, index).join('/')
+  if (!projectPath) return null
+
+  return { projectPath, changePrefix: parts.slice(index + 1).filter(Boolean) }
+}
+
+/**
+ * Compose a path recorded relative to the change dir (e.g. a run log
+ * `records/logs/run-1/CK1.log`) into a `.grace5`-relative path, which is what
+ * `graceReadFile` / `graceOpenFile` expect.
+ */
+export function toGraceRelative(
+  location: { projectPath: string, changePrefix: string[] } | null,
+  changeRelative: string,
+): string | null {
+  if (!location) return null
+
+  const segments = changeRelative.split(/[/\\]/).filter(Boolean)
+  if (segments.length === 0) return null
+
+  return [...location.changePrefix, ...segments].join('/')
+}
+
+/**
  * Pick the explorer shown in the center panel.
  * The tab strip exists only when both registries are present; with a single
  * registry its explorer renders bare and the stored tab is ignored.

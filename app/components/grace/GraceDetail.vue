@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { GraceChangeDetail } from '~/types/grace'
-import { graceReadFile, isTauri } from '~/utils/bd-api'
-import { joinPath } from '~/utils/path'
+import { graceReadFile, graceOpenFile } from '~/utils/bd-api'
+import { graceLocation, toGraceRelative } from '~/utils/grace-helpers'
 import { CopyableId } from '~/components/ui/copyable-id'
 import { Button } from '~/components/ui/button'
 import {
@@ -38,28 +38,12 @@ const emit = defineEmits<{
 const summary = computed(() => props.detail?.summary ?? null)
 
 /**
- * `detail.dir` is the absolute change directory inside `.grace5`. Split it at
- * the `.grace5` segment to recover both the project root (what `graceReadFile`
- * takes) and the change's path below `.grace5` (what its `relPath` is relative
- * to). Log paths recorded in run results are relative to the change dir.
+ * `detail.dir` is the absolute change directory inside `.grace5`. The split
+ * into project root + change-relative prefix is pure (and tested) in
+ * `~/utils/grace-helpers`; log paths recorded in run results are relative to
+ * the change dir.
  */
-const graceLocation = computed(() => {
-  const dir = props.detail?.dir
-  if (!dir) return null
-  const parts = dir.split(/[/\\]/)
-  const index = parts.lastIndexOf('.grace5')
-  if (index === -1) return null
-  return {
-    projectPath: parts.slice(0, index).join('/'),
-    changePrefix: parts.slice(index + 1).filter(Boolean),
-  }
-})
-
-const toGraceRelative = (changeRelative: string): string | null => {
-  const location = graceLocation.value
-  if (!location) return null
-  return [...location.changePrefix, ...changeRelative.split(/[/\\]/).filter(Boolean)].join('/')
-}
+const location = computed(() => graceLocation(props.detail?.dir))
 
 // Collapsible section state (view-local; not part of the persisted storage contract)
 const openSections = reactive({ contract: true, checks: true, records: true, notes: true })
@@ -68,22 +52,26 @@ const toggleSection = (section: keyof typeof openSections) => {
   openSections[section] = !openSections[section]
 }
 
-// Raw artifacts (contract.xml, notes.md, briefs) open in the system app.
-// `openUrl` only accepts http(s) URLs, so local files go through the same
-// Tauri shell plugin `open` with their absolute path instead.
+// Raw artifacts (contract.xml, notes.md, briefs) open in the system app through
+// `grace_open_file`, which enforces .grace5 containment.
+// Ownership: this component opens; `open-file` is emitted for observation only —
+// Task 10 must NOT open again or every artifact would launch twice.
+const { error: notifyError } = useNotification()
+
 const openArtifact = async (changeRelativePath: string) => {
-  const dir = props.detail?.dir
-  if (!dir) return
+  const relPath = toGraceRelative(location.value, changeRelativePath)
 
   emit('open-file', changeRelativePath)
 
-  if (!isTauri()) return
+  if (!location.value || !relPath) {
+    notifyError('Cannot open GRACE artifact', 'The change directory is not inside .grace5')
+    return
+  }
 
   try {
-    const { open } = await import('@tauri-apps/plugin-shell')
-    await open(joinPath(dir, changeRelativePath))
+    await graceOpenFile(location.value.projectPath, relPath)
   } catch (e) {
-    console.error('Failed to open GRACE artifact:', e)
+    notifyError('Failed to open GRACE artifact', e instanceof Error ? e.message : 'Unknown error')
   }
 }
 
@@ -95,9 +83,13 @@ const logError = ref<string | null>(null)
 const logContent = ref('')
 const logTruncated = ref(false)
 
+// Token guard: a log read that settles after another log was opened (or after
+// the selection changed) must not render into the dialog.
+let logRequestToken = 0
+
 const openLog = async (changeRelativeLog: string) => {
-  const location = graceLocation.value
-  const relPath = toGraceRelative(changeRelativeLog)
+  const token = ++logRequestToken
+  const relPath = toGraceRelative(location.value, changeRelativeLog)
 
   logTitle.value = changeRelativeLog
   logDialogOpen.value = true
@@ -106,22 +98,34 @@ const openLog = async (changeRelativeLog: string) => {
   logContent.value = ''
   logTruncated.value = false
 
-  if (!location || !relPath) {
+  if (!location.value || !relPath) {
     logError.value = 'Cannot resolve the .grace5 root for this change'
     logLoading.value = false
     return
   }
 
   try {
-    const file = await graceReadFile(location.projectPath, relPath)
+    const file = await graceReadFile(location.value.projectPath, relPath)
+    if (token !== logRequestToken) return
     logContent.value = file.content
     logTruncated.value = file.truncated
   } catch (e) {
+    if (token !== logRequestToken) return
     logError.value = e instanceof Error ? e.message : 'Failed to read log'
   } finally {
-    logLoading.value = false
+    if (token === logRequestToken) logLoading.value = false
   }
 }
+
+// A different change can never reuse the previous change's log state.
+watch(() => props.detail?.summary.id, () => {
+  logRequestToken++
+  logDialogOpen.value = false
+  logLoading.value = false
+  logError.value = null
+  logContent.value = ''
+  logTruncated.value = false
+})
 </script>
 
 <template>
@@ -198,7 +202,7 @@ const openLog = async (changeRelativeLog: string) => {
           @toggle="toggleSection('contract')"
         >
           <div class="space-y-2">
-            <div v-if="detail.contract" class="flex justify-end">
+            <div class="flex justify-end">
               <Button
                 variant="outline"
                 size="sm"

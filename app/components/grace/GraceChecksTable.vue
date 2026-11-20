@@ -2,6 +2,7 @@
 import type { GraceCheck, GraceRunResult } from '~/types/grace'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
+import { graceVerdictClass } from '~/components/grace/grace-display'
 import {
   Table,
   TableBody,
@@ -28,14 +29,7 @@ const resultsByCheck = computed(() => {
   return map
 })
 
-const verdictClass = (verdict: string) => {
-  switch (verdict) {
-    case 'passed': return 'bg-green-600 text-white'
-    case 'failed': return 'bg-destructive text-destructive-foreground'
-    case 'skipped': return 'bg-muted text-muted-foreground'
-    default: return 'bg-secondary text-secondary-foreground'
-  }
-}
+const resultFor = (checkId: string) => resultsByCheck.value.get(checkId) ?? null
 </script>
 
 <template>
@@ -95,35 +89,35 @@ const verdictClass = (verdict: string) => {
             </TableCell>
 
             <TableCell class="text-xs">
-              <template v-if="resultsByCheck.get(check.id)">
+              <template v-if="resultFor(check.id)">
                 <div class="flex items-center gap-1.5">
-                  <Badge :class="verdictClass(resultsByCheck.get(check.id)!.verdict)" variant="secondary" class="text-[10px] px-1 py-0">
-                    {{ resultsByCheck.get(check.id)!.verdict }}
+                  <Badge :class="graceVerdictClass(resultFor(check.id)!.verdict)" variant="secondary" class="text-[10px] px-1 py-0">
+                    {{ resultFor(check.id)!.verdict }}
                   </Badge>
-                  <span v-if="resultsByCheck.get(check.id)!.claim" class="text-[10px] text-muted-foreground">
-                    {{ resultsByCheck.get(check.id)!.claim }}
+                  <span v-if="resultFor(check.id)!.claim" class="text-[10px] text-muted-foreground">
+                    {{ resultFor(check.id)!.claim }}
                   </span>
                 </div>
                 <div class="mt-1 text-[10px] text-muted-foreground space-y-0.5">
-                  <div v-if="resultsByCheck.get(check.id)!.exit !== null">
-                    exit: {{ resultsByCheck.get(check.id)!.exit }}
+                  <div v-if="resultFor(check.id)!.exit !== null">
+                    exit: {{ resultFor(check.id)!.exit }}
                   </div>
-                  <div v-if="resultsByCheck.get(check.id)!.elapsedMs !== null">
-                    elapsed: {{ resultsByCheck.get(check.id)!.elapsedMs }} ms
+                  <div v-if="resultFor(check.id)!.elapsedMs !== null">
+                    elapsed: {{ resultFor(check.id)!.elapsedMs }} ms
                   </div>
-                  <div v-if="resultsByCheck.get(check.id)!.environment">
-                    env: {{ resultsByCheck.get(check.id)!.environment }}
+                  <div v-if="resultFor(check.id)!.environment">
+                    env: {{ resultFor(check.id)!.environment }}
                   </div>
-                  <div v-if="resultsByCheck.get(check.id)!.reason">
-                    reason: {{ resultsByCheck.get(check.id)!.reason }}
+                  <div v-if="resultFor(check.id)!.reason">
+                    reason: {{ resultFor(check.id)!.reason }}
                   </div>
                 </div>
                 <Button
-                  v-if="resultsByCheck.get(check.id)!.log"
+                  v-if="resultFor(check.id)!.log"
                   variant="outline"
                   size="sm"
                   class="h-6 mt-1 px-1.5 text-[10px]"
-                  @click="emit('open-log', resultsByCheck.get(check.id)!.log!)"
+                  @click="emit('open-log', resultFor(check.id)!.log!)"
                 >
                   View log
                 </Button>
@@ -133,40 +127,40 @@ const verdictClass = (verdict: string) => {
           </TableRow>
 
           <TableRow
-            v-if="resultsByCheck.get(check.id)?.trace || resultsByCheck.get(check.id)?.observation"
+            v-if="resultFor(check.id)?.trace || resultFor(check.id)?.observation"
             class="hover:bg-transparent"
           >
             <TableCell colspan="3" class="text-[10px] text-muted-foreground py-1.5">
-              <div v-if="resultsByCheck.get(check.id)?.trace" class="flex flex-wrap items-center gap-x-3 gap-y-0.5">
+              <div v-if="resultFor(check.id)?.trace" class="flex flex-wrap items-center gap-x-3 gap-y-0.5">
                 <span class="uppercase tracking-wide">Trace</span>
                 <span>
-                  matched {{ resultsByCheck.get(check.id)!.trace!.matched }}/{{ resultsByCheck.get(check.id)!.trace!.expected }}
+                  matched {{ resultFor(check.id)!.trace!.matched }}/{{ resultFor(check.id)!.trace!.expected }}
                 </span>
-                <span v-if="resultsByCheck.get(check.id)!.trace!.origin">
-                  origin: {{ resultsByCheck.get(check.id)!.trace!.origin }}
+                <span v-if="resultFor(check.id)!.trace!.origin">
+                  origin: {{ resultFor(check.id)!.trace!.origin }}
                 </span>
-                <span v-if="resultsByCheck.get(check.id)!.trace!.device">
-                  device: {{ resultsByCheck.get(check.id)!.trace!.device }}
+                <span v-if="resultFor(check.id)!.trace!.device">
+                  device: {{ resultFor(check.id)!.trace!.device }}
                 </span>
-                <span v-if="resultsByCheck.get(check.id)!.trace!.build">
-                  build: {{ resultsByCheck.get(check.id)!.trace!.build }}
+                <span v-if="resultFor(check.id)!.trace!.build">
+                  build: {{ resultFor(check.id)!.trace!.build }}
                 </span>
-                <span v-if="resultsByCheck.get(check.id)!.trace!.missing.length > 0" class="text-destructive">
-                  missing: {{ resultsByCheck.get(check.id)!.trace!.missing.join(', ') }}
+                <span v-if="resultFor(check.id)!.trace!.missing.length > 0" class="text-destructive">
+                  missing: {{ resultFor(check.id)!.trace!.missing.join(', ') }}
                 </span>
-                <span v-if="resultsByCheck.get(check.id)!.trace!.forbidden.length > 0" class="text-destructive">
-                  forbidden: {{ resultsByCheck.get(check.id)!.trace!.forbidden.join(', ') }}
+                <span v-if="resultFor(check.id)!.trace!.forbidden.length > 0" class="text-destructive">
+                  forbidden: {{ resultFor(check.id)!.trace!.forbidden.join(', ') }}
                 </span>
               </div>
-              <div v-if="resultsByCheck.get(check.id)?.observation" class="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5">
+              <div v-if="resultFor(check.id)?.observation" class="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5">
                 <span class="uppercase tracking-wide">Observation</span>
-                <span>at {{ resultsByCheck.get(check.id)!.observation!.at }}</span>
-                <span>build: {{ resultsByCheck.get(check.id)!.observation!.build }}</span>
-                <span>env: {{ resultsByCheck.get(check.id)!.observation!.environment }}</span>
-                <span v-if="resultsByCheck.get(check.id)!.observation!.reference">
-                  ref: {{ resultsByCheck.get(check.id)!.observation!.reference }}
+                <span>at {{ resultFor(check.id)!.observation!.at }}</span>
+                <span>build: {{ resultFor(check.id)!.observation!.build }}</span>
+                <span>env: {{ resultFor(check.id)!.observation!.environment }}</span>
+                <span v-if="resultFor(check.id)!.observation!.reference">
+                  ref: {{ resultFor(check.id)!.observation!.reference }}
                 </span>
-                <span class="italic">{{ resultsByCheck.get(check.id)!.observation!.note }}</span>
+                <span class="italic">{{ resultFor(check.id)!.observation!.note }}</span>
               </div>
             </TableCell>
           </TableRow>

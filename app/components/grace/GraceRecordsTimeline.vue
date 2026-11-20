@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { GraceApproval, GraceRun, GraceReview, GraceClose, GraceBrief } from '~/types/grace'
 import { Badge } from '~/components/ui/badge'
+import { graceSectionHeading as sectionHeading, graceVerdictClass } from '~/components/grace/grace-display'
 import { Button } from '~/components/ui/button'
 
 const props = defineProps<{
@@ -16,7 +17,7 @@ const emit = defineEmits<{
   'open-file': [relPath: string]
 }>()
 
-const sectionHeading = 'text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-1'
+// section heading + verdict classes come from grace-display
 
 const approvalsSorted = computed(() => [...props.approvals].sort((a, b) => a.revision - b.revision))
 const runsSorted = computed(() => [...props.runs].sort((a, b) => a.n - b.n))
@@ -36,15 +37,6 @@ const decisionClass = (decision: string) => {
   switch (decision) {
     case 'approved': return 'bg-green-600 text-white'
     case 'rejected': return 'bg-destructive text-destructive-foreground'
-    default: return 'bg-secondary text-secondary-foreground'
-  }
-}
-
-const verdictClass = (verdict: string) => {
-  switch (verdict) {
-    case 'passed': return 'bg-green-600 text-white'
-    case 'failed': return 'bg-destructive text-destructive-foreground'
-    case 'skipped': return 'bg-muted text-muted-foreground'
     default: return 'bg-secondary text-secondary-foreground'
   }
 }
@@ -136,7 +128,7 @@ const verdictClass = (verdict: string) => {
               >
                 <div class="flex flex-wrap items-center gap-1.5">
                   <span class="font-mono text-xs">{{ result.check }}</span>
-                  <Badge :class="verdictClass(result.verdict)" variant="secondary" class="text-[10px] px-1 py-0">
+                  <Badge :class="graceVerdictClass(result.verdict)" variant="secondary" class="text-[10px] px-1 py-0">
                     {{ result.verdict }}
                   </Badge>
                   <span class="text-muted-foreground">{{ result.kind }}</span>
@@ -291,7 +283,7 @@ const verdictClass = (verdict: string) => {
             variant="outline"
             size="sm"
             class="h-5 px-1.5 text-[10px] shrink-0"
-            @click="emit('open-file', brief.file)"
+            @click="emit('open-file', `records/${brief.file}`)"
           >
             Open externally
           </Button>
