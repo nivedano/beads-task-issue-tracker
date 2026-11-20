@@ -1,17 +1,7 @@
 <script setup lang="ts">
 import type { IssuePriority } from '~/types/issue'
-import { Button } from '~/components/ui/button'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuCheckboxItem,
-  DropdownMenuTrigger,
-} from '~/components/ui/dropdown-menu'
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '~/components/ui/tooltip'
+import { DropdownMenuCheckboxItem } from '~/components/ui/dropdown-menu'
+import { FilterDropdown } from '~/components/ui/filter-dropdown'
 import PriorityBadge from '~/components/issues/PriorityBadge.vue'
 
 const props = defineProps<{
@@ -21,7 +11,8 @@ const props = defineProps<{
 
 defineEmits<{
   toggle: [priority: IssuePriority]
-  'update:open': [value: boolean]
+  open: []
+  close: []
 }>()
 
 const priorityOptions: { value: IssuePriority; label: string }[] = [
@@ -36,42 +27,35 @@ const isSelected = (priority: IssuePriority) => props.selectedPriorities.include
 </script>
 
 <template>
-  <Tooltip>
-    <DropdownMenu :open="open" :modal="false" @update:open="$emit('update:open', $event)">
-      <TooltipTrigger as-child>
-        <DropdownMenuTrigger as-child>
-          <Button variant="outline" size="sm" class="h-8 text-xs gap-1">
-            <svg
-              class="w-3.5 h-3.5"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-            >
-              <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
-            </svg>
-            Priority
-            <span
-              v-if="selectedPriorities.length > 0"
-              class="ml-0.5 rounded-full bg-primary text-primary-foreground text-[10px] px-1.5 min-w-[18px] text-center"
-            >
-              {{ selectedPriorities.length }}
-            </span>
-          </Button>
-        </DropdownMenuTrigger>
-      </TooltipTrigger>
-      <TooltipContent>Filter by priority</TooltipContent>
-      <DropdownMenuContent align="start" class="w-36">
-      <DropdownMenuCheckboxItem
-        v-for="opt in priorityOptions"
-        :key="opt.value"
-        :model-value="isSelected(opt.value)"
-        class="text-xs cursor-pointer"
-        @select.prevent="$emit('toggle', opt.value)"
+  <FilterDropdown
+    :open="open"
+    mode="checkbox"
+    label="Priority"
+    tooltip="Filter by priority"
+    :count="selectedPriorities.length"
+    content-class="w-36"
+    @open="$emit('open')"
+    @close="$emit('close')"
+  >
+    <template #icon>
+      <svg
+        class="w-3.5 h-3.5"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
       >
-        <PriorityBadge :priority="opt.value" size="sm" />
-      </DropdownMenuCheckboxItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  </Tooltip>
+        <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+      </svg>
+    </template>
+    <DropdownMenuCheckboxItem
+      v-for="opt in priorityOptions"
+      :key="opt.value"
+      :model-value="isSelected(opt.value)"
+      class="text-xs cursor-pointer"
+      @select.prevent="$emit('toggle', opt.value)"
+    >
+      <PriorityBadge :priority="opt.value" size="sm" />
+    </DropdownMenuCheckboxItem>
+  </FilterDropdown>
 </template>

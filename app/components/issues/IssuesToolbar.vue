@@ -8,7 +8,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '~/components/ui/tooltip'
-import ColumnConfigPopover from '~/components/issues/ColumnConfig.vue'
+import { ColumnConfigPopover } from '~/components/ui/column-config-popover'
 import StatusFilterDropdown from '~/components/issues/StatusFilterDropdown.vue'
 import TypeFilterDropdown from '~/components/issues/TypeFilterDropdown.vue'
 import PriorityFilterDropdown from '~/components/issues/PriorityFilterDropdown.vue'
@@ -147,6 +147,8 @@ const handleFilterClick = (filter: FilterType) => {
           <TypeFilterDropdown
             :selected-types="selectedTypes"
             :open="activeFilter === 'type'"
+            @open="activeFilter = 'type'"
+            @close="activeFilter = null"
             @toggle="$emit('toggleType', $event)"
           />
         </div>
@@ -156,6 +158,8 @@ const handleFilterClick = (filter: FilterType) => {
             :available-labels="availableLabels"
             :selected-labels="selectedLabels"
             :open="activeFilter === 'label'"
+            @open="activeFilter = 'label'"
+            @close="activeFilter = null"
             @toggle="$emit('toggleLabel', $event)"
           />
         </div>
@@ -164,6 +168,8 @@ const handleFilterClick = (filter: FilterType) => {
           <StatusFilterDropdown
             :selected-statuses="selectedStatuses"
             :open="activeFilter === 'status'"
+            @open="activeFilter = 'status'"
+            @close="activeFilter = null"
             @toggle="$emit('toggleStatus', $event)"
           />
         </div>
@@ -172,6 +178,8 @@ const handleFilterClick = (filter: FilterType) => {
           <PriorityFilterDropdown
             :selected-priorities="selectedPriorities"
             :open="activeFilter === 'priority'"
+            @open="activeFilter = 'priority'"
+            @close="activeFilter = null"
             @toggle="$emit('togglePriority', $event)"
           />
         </div>
@@ -181,6 +189,8 @@ const handleFilterClick = (filter: FilterType) => {
             :available-assignees="availableAssignees"
             :selected-assignees="selectedAssignees"
             :open="activeFilter === 'assignee'"
+            @open="activeFilter = 'assignee'"
+            @close="activeFilter = null"
             @toggle="$emit('toggleAssignee', $event)"
           />
         </div>
@@ -190,6 +200,8 @@ const handleFilterClick = (filter: FilterType) => {
             :available-labels="availableLabels"
             :available-assignees="availableAssignees"
             :open="activeFilter === 'exclusion'"
+            @open="activeFilter = 'exclusion'"
+            @close="activeFilter = null"
           />
         </div>
       </div>
@@ -218,6 +230,7 @@ const handleFilterClick = (filter: FilterType) => {
 
     <ColumnConfigPopover
       :columns="columns"
+      :reorder="true"
       @update:columns="$emit('update:columns', $event)"
       @reset="$emit('resetColumns')"
     />

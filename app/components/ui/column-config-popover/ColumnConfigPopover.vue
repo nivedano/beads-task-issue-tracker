@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { ColumnConfig } from '~/types/issue'
-import { onClickOutside } from '@vueuse/core'
+import { onClickOutside, onKeyStroke } from '@vueuse/core'
 import {
   Tooltip,
   TooltipContent,
@@ -10,9 +10,16 @@ import { Button } from '~/components/ui/button'
 import { Checkbox } from '~/components/ui/checkbox'
 import Sortable from 'sortablejs'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   columns: ColumnConfig[]
-}>()
+  /** Enable SortableJS drag-reorder of the listed columns. */
+  reorder?: boolean
+  /** Column ids that are not offered and keep their array position. */
+  excludeIds?: string[]
+}>(), {
+  reorder: false,
+  excludeIds: () => [],
+})
 
 const emit = defineEmits<{
   'update:columns': [columns: ColumnConfig[]]
@@ -20,16 +27,24 @@ const emit = defineEmits<{
 }>()
 
 const isOpen = ref(false)
+// These must be PLAIN element refs: onClickOutside dereferences the ref and
+// calls `.contains` on it. A component ref has no `.contains`, which made
+// every outside click throw and left the panel open.
 const panelRef = ref<HTMLElement | null>(null)
 const triggerRef = ref<HTMLElement | null>(null)
 const listRef = ref<HTMLElement | null>(null)
 let sortableInstance: Sortable | null = null
 
+const idPrefix = useId()
+
+const displayColumns = computed(() =>
+  props.columns.filter(column => !props.excludeIds.includes(column.id))
+)
+
 const handleToggle = (columnId: string, checked: boolean) => {
-  const updatedColumns = props.columns.map((col) =>
+  emit('update:columns', props.columns.map(col =>
     col.id === columnId ? { ...col, visible: checked } : col
-  )
-  emit('update:columns', updatedColumns)
+  ))
 }
 
 const initSortable = () => {
@@ -37,7 +52,7 @@ const initSortable = () => {
     sortableInstance.destroy()
     sortableInstance = null
   }
-  if (!listRef.value) return
+  if (!props.reorder || !listRef.value) return
 
   sortableInstance = Sortable.create(listRef.value, {
     handle: '.drag-handle',
@@ -58,13 +73,17 @@ const initSortable = () => {
       container.removeChild(evt.item)
       const refNode = container.children[evt.oldIndex] || null
       container.insertBefore(evt.item, refNode)
-      // Build reordered columns array
-      const reordered = newOrder
-        .map(id => props.columns.find(c => c.id === id))
-        .filter((c): c is ColumnConfig => !!c)
-      if (reordered.length === props.columns.length) {
-        emit('update:columns', reordered)
-      }
+      // Rebuild the full array: excluded (identity) columns keep their place.
+      const byId = new Map(displayColumns.value.map(column => [column.id, column]))
+      const ordered = newOrder
+        .map(id => byId.get(id))
+        .filter((column): column is ColumnConfig => !!column)
+      if (ordered.length !== displayColumns.value.length) return
+      let cursor = 0
+      emit('update:columns', props.columns.map((column) => {
+        if (props.excludeIds.includes(column.id)) return column
+        return ordered[cursor++]!
+      }))
     },
   })
 }
@@ -74,6 +93,10 @@ onClickOutside(panelRef, (event) => {
   if (triggerRef.value && (triggerRef.value === event.target || triggerRef.value.contains(event.target as Node))) return
   isOpen.value = false
 }, { ignore: [triggerRef] })
+
+onKeyStroke('Escape', () => {
+  if (isOpen.value) isOpen.value = false
+})
 
 watch(isOpen, (open) => {
   if (open) {
@@ -94,26 +117,29 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="relative">
-    <Tooltip>
-      <TooltipTrigger as-child>
-        <Button ref="triggerRef" variant="outline" size="icon" class="h-8 w-8" @click="isOpen = !isOpen">
-          <svg
-            class="w-3.5 h-3.5"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-          >
-            <rect x="3" y="3" width="7" height="7" />
-            <rect x="14" y="3" width="7" height="7" />
-            <rect x="14" y="14" width="7" height="7" />
-            <rect x="3" y="14" width="7" height="7" />
-          </svg>
-          <span class="sr-only">Column settings</span>
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent>Column settings</TooltipContent>
-    </Tooltip>
+    <!-- Plain element ref: onClickOutside needs `.contains` on the trigger. -->
+    <div ref="triggerRef">
+      <Tooltip>
+        <TooltipTrigger as-child>
+          <Button variant="outline" size="icon" class="h-8 w-8" @click="isOpen = !isOpen">
+            <svg
+              class="w-3.5 h-3.5"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <rect x="3" y="3" width="7" height="7" />
+              <rect x="14" y="3" width="7" height="7" />
+              <rect x="14" y="14" width="7" height="7" />
+              <rect x="3" y="14" width="7" height="7" />
+            </svg>
+            <span class="sr-only">Column settings</span>
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>Column settings</TooltipContent>
+      </Tooltip>
+    </div>
 
     <div
       v-if="isOpen"
@@ -126,12 +152,15 @@ onBeforeUnmount(() => {
       <div class="h-px bg-border" />
       <div ref="listRef" class="py-1">
         <div
-          v-for="column in columns"
+          v-for="column in displayColumns"
           :key="column.id"
           :data-column-id="column.id"
           class="flex items-center gap-2 px-2 py-1 text-xs hover:bg-accent/50 rounded-sm mx-1"
         >
-          <span class="drag-handle cursor-grab active:cursor-grabbing text-muted-foreground/40 hover:text-muted-foreground flex-shrink-0">
+          <span
+            v-if="reorder"
+            class="drag-handle cursor-grab active:cursor-grabbing text-muted-foreground/40 hover:text-muted-foreground flex-shrink-0"
+          >
             <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
               <circle cx="9" cy="5" r="1.5" /><circle cx="15" cy="5" r="1.5" />
               <circle cx="9" cy="12" r="1.5" /><circle cx="15" cy="12" r="1.5" />
@@ -139,12 +168,12 @@ onBeforeUnmount(() => {
             </svg>
           </span>
           <Checkbox
-            :id="`col-${column.id}`"
+            :id="`${idPrefix}-col-${column.id}`"
             :model-value="column.visible"
             class="h-3.5 w-3.5"
             @update:model-value="handleToggle(column.id, !!$event)"
           />
-          <label :for="`col-${column.id}`" class="flex-1 cursor-pointer select-none">{{ column.label }}</label>
+          <label :for="`${idPrefix}-col-${column.id}`" class="flex-1 cursor-pointer select-none">{{ column.label }}</label>
         </div>
       </div>
       <div class="h-px bg-border" />
