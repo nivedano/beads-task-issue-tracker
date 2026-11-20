@@ -106,24 +106,21 @@ const toggleSort = (columnId: string) => {
           </TableCell>
         </TableRow>
 
-        <TableRow
-          v-for="change in changes"
-          :key="change.id"
-          class="cursor-pointer"
-          :class="selectedId === change.id ? 'bg-accent/50 hover:bg-accent/70' : 'hover:bg-muted/50'"
-          @click="emit('select', change)"
-        >
+        <template v-if="visibleColumns.length > 0">
+          <TableRow
+            v-for="change in changes"
+            :key="change.id"
+            class="cursor-pointer"
+            :class="selectedId === change.id ? 'bg-accent/50 hover:bg-accent/70' : 'hover:bg-muted/50'"
+            @click="emit('select', change)"
+          >
           <TableCell
             v-for="col in visibleColumns"
             :key="col.id"
             class="text-xs"
           >
             <template v-if="col.id === 'id'">
-              <span class="font-mono whitespace-nowrap">{{ change.id }}</span>
-            </template>
-
-            <template v-else-if="col.id === 'title'">
-              <div class="flex items-center gap-1.5 min-w-0 max-w-[420px]">
+              <div class="flex items-center gap-1.5">
                 <Tooltip v-if="change.malformed">
                   <TooltipTrigger as-child>
                     <svg
@@ -142,8 +139,12 @@ const toggleSort = (columnId: string) => {
                     <p class="text-xs max-w-xs">{{ change.malformed }}</p>
                   </TooltipContent>
                 </Tooltip>
-                <span class="truncate">{{ change.title ?? '—' }}</span>
+                <span class="font-mono whitespace-nowrap">{{ change.id }}</span>
               </div>
+            </template>
+
+            <template v-else-if="col.id === 'title'">
+              <span class="block truncate max-w-[420px]">{{ change.title ?? '—' }}</span>
             </template>
 
             <template v-else-if="col.id === 'stage'">
@@ -168,7 +169,8 @@ const toggleSort = (columnId: string) => {
               <span class="tabular-nums">{{ change.revision ?? '—' }}</span>
             </template>
           </TableCell>
-        </TableRow>
+          </TableRow>
+        </template>
       </TableBody>
     </Table>
   </div>

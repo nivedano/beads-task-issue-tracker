@@ -69,6 +69,13 @@ const handleFilterClick = (filter: FilterType) => {
   activeFilter.value = activeFilter.value === filter ? null : filter
 }
 
+// Close-only: the dropdowns are controlled, so Reka's own close requests
+// (item select, Escape, outside click) arrive here. Ignoring `true` keeps
+// @pointerdown.capture the sole opener and avoids fighting it.
+const closeFilter = (open: boolean) => {
+  if (!open) activeFilter.value = null
+}
+
 // Column settings popover (mirrors issues/ColumnConfig.vue without drag-reorder)
 const isColumnPanelOpen = ref(false)
 const columnPanelRef = ref<HTMLElement | null>(null)
@@ -114,6 +121,7 @@ const toggleColumn = (columnId: string, checked: boolean) => {
           <StageFilterDropdown
             :selected-stages="selectedStages"
             :open="activeFilter === 'stage'"
+            @update:open="closeFilter"
             @toggle="emit('toggleStage', $event)"
           />
         </div>
@@ -122,6 +130,7 @@ const toggleColumn = (columnId: string, checked: boolean) => {
           <AuthorizationFilterDropdown
             :selected-authorizations="selectedAuthorizations"
             :open="activeFilter === 'authorization'"
+            @update:open="closeFilter"
             @toggle="emit('toggleAuthorization', $event)"
           />
         </div>
@@ -130,6 +139,7 @@ const toggleColumn = (columnId: string, checked: boolean) => {
           <ScopeFilterDropdown
             :scope="scope"
             :open="activeFilter === 'scope'"
+            @update:open="closeFilter"
             @select="emit('selectScope', $event)"
           />
         </div>
