@@ -125,11 +125,6 @@ const { needsMigration: needsRefsMigration, refCount: refsRefCount, isMigrating:
 // Sidebar resize
 const { isLeftSidebarOpen, isRightSidebarOpen, leftSidebarWidth, rightSidebarWidth, isResizing, startResizeLeft, startResizeRight } = useSidebarResize()
 
-// Close right sidebar on init if no issue selected
-if (import.meta.client && !selectedIssue.value) {
-  isRightSidebarOpen.value = false
-}
-
 // Probe enabled toggle (dev-only — hidden in production until probe is a public feature)
 const isDev = import.meta.dev
 const probeEnabled = isDev ? useLocalStorage('beads:probeEnabled', false) : ref(false)
@@ -1416,9 +1411,10 @@ watch(
         </template>
       </main>
 
-      <!-- Right Sidebar - Details (hidden when no selection and not in edit mode) -->
+      <!-- Right Sidebar - Details. Always mounted on desktop: its width (48px rail
+           vs full pane) comes from isRightSidebarOpen, and the content branches
+           cover detail, placeholder, grace detail and form. -->
       <aside
-        v-if="selectedIssue || isEditMode || isCreatingNew || isRightSidebarOpen || (effectiveExplorer.tab === 'grace' && graceSelectedChange)"
         ref="rightPanelRef"
         class="bg-card flex flex-col relative overflow-hidden outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/50"
         :class="[
