@@ -1,6 +1,6 @@
 import type { Issue, CreateIssuePayload, UpdateIssuePayload } from '~/types/issue'
 import type { GraceListResult, GraceChangeDetail, GraceFileContent } from '~/types/grace'
-import { getPathSeparator } from '~/utils/path'
+import { joinPath } from '~/utils/path'
 import { invoke } from '@tauri-apps/api/core'
 import { matchProbeProject } from '~/utils/probe-adapter'
 import type { ProbeMetricsResponse, ProbeProject } from '~/utils/probe-adapter'
@@ -810,24 +810,23 @@ export async function fsExists(path: string): Promise<boolean> {
   return true
 }
 
-function joinChild(base: string, child: string): string {
-  const sep = getPathSeparator(base)
-  return base.endsWith(sep) ? `${base}${child}` : `${base}${sep}${child}`
-}
-
 /**
  * Which registries a project folder exposes: `.beads` (issue explorer) and
- * `.grace5` (GRACE explorer). Web mode has no filesystem access, so both are
- * reported absent — the GRACE explorer is desktop-only.
+ * `.grace5` (GRACE explorer).
+ *
+ * Desktop probes the filesystem directly. Web mode has no Tauri backend: the
+ * server still serves the beads registry through its API routes, so `hasBeads`
+ * comes from `fsList`; GRACE is desktop-only and reported absent.
  */
 export async function probeProjectCapabilities(path: string): Promise<{ hasBeads: boolean; hasGrace: boolean }> {
   if (!isTauri()) {
-    return { hasBeads: false, hasGrace: false }
+    const { hasBeads } = await fsList(path)
+    return { hasBeads, hasGrace: false }
   }
 
   const [hasBeads, hasGrace] = await Promise.all([
-    fsExists(joinChild(path, '.beads')),
-    fsExists(joinChild(path, '.grace5')),
+    fsExists(joinPath(path, '.beads')),
+    fsExists(joinPath(path, '.grace5')),
   ])
   return { hasBeads, hasGrace }
 }

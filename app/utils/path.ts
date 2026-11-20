@@ -93,6 +93,22 @@ export function getParentPath(path: string): string {
 }
 
 /**
+ * Append a child segment to a path, preserving the base path's separator
+ * (and root anchoring for `C:` / `\\srv\share` / `/`).
+ *
+ * `C:\dev\app` + `.beads` → `C:\dev\app\.beads`
+ * `/srv/app/` + `.beads` → `/srv/app/.beads`
+ */
+export function joinPath(base: string, child: string): string {
+  if (!base) return child
+
+  const { root, rest } = splitRoot(base)
+  const parent = root !== '' && segmentsOf(rest).length === 0 ? root : base
+  const separator = getPathSeparator(parent)
+  return /[\\/]$/.test(parent) ? `${parent}${child}` : `${parent}${separator}${child}`
+}
+
+/**
  * Breadcrumb segments for a path, each with the absolute path it navigates to.
  * `C:\dev\app` → [{ name: 'C:', path: 'C:\' }, { name: 'dev', path: 'C:\dev' },
  *                 { name: 'app', path: 'C:\dev\app' }]
