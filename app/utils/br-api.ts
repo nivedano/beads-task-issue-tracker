@@ -354,7 +354,7 @@ export async function brPollData(path?: string): Promise<PollData> {
 }
 
 // ============================================================================
-// BD API Functions - Use Tauri invoke in app, fetch in web
+// BR API Functions - Use Tauri invoke in app, fetch in web
 // ============================================================================
 
 export interface BrListOptions {
