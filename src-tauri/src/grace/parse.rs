@@ -272,7 +272,18 @@ pub fn parse_records(change_dir: &Path, change_id: &str) -> (Records, Vec<String
     let mut briefs = Vec::new();
     let mut close_exists = false;
 
-    let mut names = file_names(&records_dir);
+    let mut names = match fs::read_dir(&records_dir) {
+        Ok(entries) => entries
+            .filter_map(Result::ok)
+            .filter(|entry| entry.file_type().map(|kind| kind.is_file()).unwrap_or(false))
+            .filter_map(|entry| entry.file_name().into_string().ok())
+            .collect(),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+        Err(error) => {
+            defects.push(format!("records: {error}"));
+            Vec::new()
+        }
+    };
     names.sort();
     for file in names {
         if let Some(revision) = brief_revision(&file) {
@@ -328,9 +339,9 @@ pub fn parse_records(change_dir: &Path, change_id: &str) -> (Records, Vec<String
             continue;
         }
         let own = match record.schema {
-            RecordSchema::Approval => attribute(root, "revision"),
+            RecordSchema::Approval => Some(attribute(root, "revision").unwrap_or_default()),
             RecordSchema::Close => None,
-            RecordSchema::Run | RecordSchema::Review => attribute(root, "n"),
+            RecordSchema::Run | RecordSchema::Review => Some(attribute(root, "n").unwrap_or_default()),
         };
         if let Some(own) = own {
             let expected = record.number.unwrap_or(0);
@@ -560,20 +571,6 @@ fn read_close(root: Node, file: &str) -> GraceClose {
             })
             .collect(),
     }
-}
-
-fn file_names(dir: &Path) -> Vec<String> {
-    let mut names = Vec::new();
-    if let Ok(entries) = fs::read_dir(dir) {
-        for entry in entries.filter_map(Result::ok) {
-            if entry.file_type().map(|kind| kind.is_file()).unwrap_or(false) {
-                if let Ok(name) = entry.file_name().into_string() {
-                    names.push(name);
-                }
-            }
-        }
-    }
-    names
 }
 
 /// `approval-<n>.xml`, `run-<n>.xml` or `review-<n>.xml`.
@@ -1001,5 +998,74 @@ mod records_tests {
             defects.iter().any(|defect| defect.contains("close.xml")),
             "defect should name the file: {defects:?}"
         );
+    }
+
+    #[test]
+    fn rejects_records_without_their_number_attribute() {
+        let dir = fixture_change();
+        write_record(
+            &dir,
+            "run-2.xml",
+            br#"<Run change="C-0019-retire-briefs" revision="1" contract-sha256="x" run-id="r" started="" ended="" status="completed" start="true" source-revision="" dirty="false" candidate="" kernel="grace5 0.9.0"/>"#,
+        );
+        write_record(
+            &dir,
+            "approval-2.xml",
+            br#"<Approval change="C-0019-retire-briefs" contract-sha256="x" decision="approved"/>"#,
+        );
+        let (records, defects) = parse_records(&change_path(&dir), CHANGE_ID);
+        assert!(
+            defects.iter().any(|defect| defect.contains("run-2.xml")),
+            "a run without n must be a defect: {defects:?}"
+        );
+        assert!(
+            defects.iter().any(|defect| defect.contains("approval-2.xml")),
+            "an approval without revision must be a defect: {defects:?}"
+        );
+        assert_eq!(records.runs.len(), 2);
+        assert_eq!(records.approvals.len(), 1);
+    }
+
+    #[test]
+    fn reads_log_directories_from_records_logs() {
+        let dir = fixture_change();
+        let logs = change_path(&dir).join("records").join("logs");
+        for name in ["run-3", "run-1", "run-03", "run-x"] {
+            fs::create_dir_all(logs.join(name)).unwrap();
+        }
+        let (records, defects) = parse_records(&change_path(&dir), CHANGE_ID);
+        assert!(defects.is_empty(), "unexpected defects: {defects:?}");
+        assert_eq!(records.log_dirs, vec![1, 3]);
+    }
+
+    #[test]
+    fn skips_a_record_naming_another_change() {
+        let dir = fixture_change();
+        write_record(
+            &dir,
+            "review-2.xml",
+            br#"<Review change="C-9999-other" revision="1" contract-sha256="x" n="2" status="completed"/>"#,
+        );
+        let (records, defects) = parse_records(&change_path(&dir), CHANGE_ID);
+        assert!(
+            defects.iter().any(|defect| defect.contains("review-2.xml")),
+            "defect should name the file: {defects:?}"
+        );
+        assert_eq!(records.reviews.len(), 1);
+    }
+
+    #[test]
+    fn reports_a_records_path_that_cannot_be_read() {
+        let dir = TempDir::new();
+        let change = dir.path().join(CHANGE_ID);
+        fs::create_dir_all(&change).unwrap();
+        fs::write(change.join("records"), b"not a directory").unwrap();
+        let (records, defects) = parse_records(&change, CHANGE_ID);
+        assert!(
+            defects.iter().any(|defect| defect.contains("records")),
+            "an unreadable records path must be a defect: {defects:?}"
+        );
+        assert!(records.runs.is_empty());
+        assert!(records.approvals.is_empty());
     }
 }

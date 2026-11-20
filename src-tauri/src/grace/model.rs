@@ -253,3 +253,32 @@ pub struct GraceBrief {
     pub revision: u32,
     pub file: String,
 }
+
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct GraceChangeSummary {
+    pub id: String,
+    pub title: Option<String>,
+    pub revision: Option<u32>,
+    pub stage: String,
+    pub authorization: String,
+    pub malformed: Option<String>,
+    pub in_closed_dir: bool,
+    pub closed: bool,
+    pub checks_passed: u32,
+    pub checks_required: u32,
+    pub review_status: Option<String>,
+    pub review_open_findings: u32,
+    pub problem: Option<String>,
+}
+
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct GraceListResult {
+    pub has_grace: bool,
+    pub pin: Option<String>,
+    pub pin_supported: bool,
+    pub open_count: u32,
+    pub closed_count: u32,
+    pub changes: Vec<GraceChangeSummary>,
+}
