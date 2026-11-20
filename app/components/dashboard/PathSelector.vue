@@ -11,7 +11,7 @@ import ConfirmDialog from '~/components/ui/confirm-dialog/ConfirmDialog.vue'
 import FolderPicker from './FolderPicker.vue'
 import Sortable from 'sortablejs'
 import { getFolderName } from '~/utils/path'
-import { bdList, listProbeProjects, registerOrExposeProject, patchProbeProject, probeUnregisterProject, getExternalUrl } from '~/utils/bd-api'
+import { bdList, listProbeProjects, registerOrExposeProject, patchProbeProject, probeUnregisterProject, getExternalUrl, probeProjectCapabilities } from '~/utils/bd-api'
 import type { ProbeProject } from '~/utils/probe-adapter'
 import { useKeyboardNavigation } from '~/composables/useKeyboardNavigation'
 import { deduplicateIssues } from '~/utils/issue-helpers'
@@ -26,10 +26,27 @@ const { issues } = useIssues()
 
 const projectIssueCounts = ref<Record<string, { active: number; total: number }>>({})
 const scannedProjectPaths = new Set<string>()
+// Registry capabilities per project, probed once before any count scan: the
+// scan runs `bd list` (which touches git), so a grace-only or empty folder must
+// be skipped entirely instead of being treated as a broken beads project.
+const projectCapabilities = ref<Record<string, { hasBeads: boolean; hasGrace: boolean }>>({})
 
 async function scanProjectIssueCounts(path: string) {
   scannedProjectPaths.add(path)
   try {
+    let caps = projectCapabilities.value[path]
+    if (!caps) {
+      caps = await probeProjectCapabilities(path)
+      projectCapabilities.value[path] = caps
+    }
+
+    if (!caps.hasBeads) {
+      // Grace-only (or no registry): no bd CLI, no git — the row shows a GRACE/
+      // no-registry badge instead of counts.
+      delete projectIssueCounts.value[path]
+      return
+    }
+
     const projectIssues = deduplicateIssues(await bdList({ path, includeAll: true }))
     projectIssueCounts.value[path] = {
       active: projectIssues.filter(issue => issue.status === 'open' || issue.status === 'in_progress').length,
@@ -45,6 +62,9 @@ watch(() => projects.value.map(project => project.path).sort().join('\0'), () =>
   for (const path of Object.keys(projectIssueCounts.value)) {
     if (!paths.has(path)) delete projectIssueCounts.value[path]
   }
+  for (const path of Object.keys(projectCapabilities.value)) {
+    if (!paths.has(path)) delete projectCapabilities.value[path]
+  }
   for (const path of scannedProjectPaths) {
     if (!paths.has(path)) scannedProjectPaths.delete(path)
   }
@@ -56,6 +76,9 @@ watch(() => projects.value.map(project => project.path).sort().join('\0'), () =>
 watch([issues, () => beadsPath.value, () => props.isLoading], () => {
   const path = beadsPath.value
   if (props.isLoading || !path) return
+  // A known grace-only project has no beads list to mirror.
+  const caps = projectCapabilities.value[path]
+  if (!caps || !caps.hasBeads) return
   const projectIssues = deduplicateIssues(issues.value)
   projectIssueCounts.value[path] = {
     active: projectIssues.filter(issue => issue.status === 'open' || issue.status === 'in_progress').length,
@@ -550,6 +573,14 @@ watch(() => projects.value.length, () => {
               :title="`${projectIssueCounts[proj.path]?.active} open or in progress / ${projectIssueCounts[proj.path]?.total} total tickets`"
             >
               {{ projectIssueCounts[proj.path]?.active }} / {{ projectIssueCounts[proj.path]?.total }}
+            </span>
+            <span
+              v-else-if="projectCapabilities[proj.path]?.hasGrace"
+              class="shrink-0 rounded-sm border border-violet-500/50 px-1 py-0.5 text-[10px] font-medium text-violet-500"
+              :aria-label="`GRACE-only project: ${proj.name} has a .grace5 registry but no .beads registry`"
+              title="GRACE explorer only — no beads registry (no issue count available)"
+            >
+              GRACE
             </span>
             <kbd class="ml-2 shrink-0 text-right font-mono text-[10px] tabular-nums opacity-60 transition-opacity group-hover:opacity-0" aria-hidden="true">{{ projectIndex + 1 }}</kbd>
           </Button>

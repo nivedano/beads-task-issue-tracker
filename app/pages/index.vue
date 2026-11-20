@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import type { Issue, IssueStatus, UpdateIssuePayload } from '~/types/issue'
+import type { GraceChangeSummary } from '~/types/grace'
 import { isIssueBlocked } from '~/utils/issue-helpers'
+import { probeProjectCapabilities } from '~/utils/bd-api'
+import { resolveExplorerTab, type GraceFilters } from '~/utils/grace-helpers'
+import { useGrace } from '~/composables/useGrace'
 import {
   matchesShortcut,
   SHORTCUT_DASHBOARD_PANEL,
@@ -37,6 +41,10 @@ import CommentSection from '~/components/details/CommentSection.vue'
 
 // Issues components
 import IssueListPanel from '~/components/issues/IssueListPanel.vue'
+
+// Grace components
+import GraceListPanel from '~/components/grace/GraceListPanel.vue'
+import GraceDetail from '~/components/grace/GraceDetail.vue'
 
 // UI components
 import { Button } from '~/components/ui/button'
@@ -91,6 +99,23 @@ const {
   newlyAddedIds,
 } = useIssues()
 const { stats, readyIssues, fetchStats, updateFromPollData, clearStats } = useDashboard()
+const {
+  listResult: graceListResult,
+  selectedChange: graceSelectedChange,
+  detail: graceDetail,
+  isLoading: graceLoading,
+  detailLoading: graceDetailLoading,
+  error: graceError,
+  search: graceSearch,
+  filters: graceFilters,
+  sort: graceSort,
+  filteredChanges: graceFilteredChanges,
+  stats: graceStatsData,
+  fetchChanges: fetchGraceChanges,
+  selectChange: selectGraceChange,
+  refreshIfChanged: refreshGraceIfChanged,
+  clear: clearGrace,
+} = useGrace()
 const { check: checkForUpdates, startPeriodicCheck, stopPeriodicCheck } = useUpdateChecker()
 const { showDebugPanel, showSettingsDialog } = useAppMenu()
 const { needsRepair, affectedProject, isRepairing, repairError, repairProgress, repair: repairDatabase, repairAll, dismiss: dismissRepair } = useRepairDatabase()
@@ -111,6 +136,8 @@ const probeEnabled = isDev ? useLocalStorage('beads:probeEnabled', false) : ref(
 
 // React to probe toggle: launch/register or unregister
 watch(probeEnabled, async (enabled) => {
+  // The probe publishes beads data; a grace-only project has nothing to expose.
+  if (!caps.value.hasBeads) return
   if (enabled) {
     await launchProbeIfNeeded()
     ensureProbeRegistration(beadsPath.value)
@@ -142,11 +169,42 @@ const showOnboarding = computed(() => {
   return projects.value.length === 0 && !hasStoredPath.value
 })
 
+// Registry capabilities: `.beads` powers the issue explorer, `.grace5` the GRACE
+// explorer. Probed BEFORE any fetch decision so a grace-only (or empty) folder
+// never triggers a bd/git command.
+const caps = ref<{ hasBeads: boolean, hasGrace: boolean }>({ hasBeads: false, hasGrace: false })
+const explorerTabStorage = useProjectStorage<'issues' | 'grace'>('explorerTab', 'issues')
+// The strip exists only with two registries; with one, that explorer renders bare.
+const effectiveExplorer = computed(() => resolveExplorerTab(explorerTabStorage.value, caps.value))
+
+// Grace-only project: the beads dashboard has nothing to show (no KPIs, no
+// "Loading…"), but the GRACE explorer is fully live.
+const isGraceOnlyProject = computed(() => !caps.value.hasBeads && caps.value.hasGrace && !showOnboarding.value)
+
+async function probeCapabilities(path: string) {
+  // `.` is the pre-existing default path. Probing it is meaningless on desktop
+  // (it is relative to the app process cwd) and web mode has always rendered the
+  // beads explorer for it, so keep that legacy meaning.
+  if (path === '.') {
+    caps.value = { hasBeads: true, hasGrace: false }
+    return
+  }
+
+  try {
+    caps.value = await probeProjectCapabilities(path)
+  } catch {
+    // A probe failure must never break mount or a project switch.
+    caps.value = { hasBeads: false, hasGrace: false }
+  }
+}
+
 // Refs to PathSelector to open folder picker (desktop and mobile)
 const pathSelectorRef = ref<InstanceType<typeof PathSelector> | null>(null)
 const mobilePathSelectorRef = ref<InstanceType<typeof PathSelector> | null>(null)
 const desktopIssueListRef = ref<InstanceType<typeof IssueListPanel> | null>(null)
 const mobileIssueListRef = ref<InstanceType<typeof IssueListPanel> | null>(null)
+const desktopGraceListRef = ref<InstanceType<typeof GraceListPanel> | null>(null)
+const mobileGraceListRef = ref<InstanceType<typeof GraceListPanel> | null>(null)
 const leftPanelRef = ref<HTMLElement | null>(null)
 const rightPanelRef = ref<HTMLElement | null>(null)
 
@@ -166,8 +224,28 @@ const openFolderPicker = () => {
 
 const handleOnboardingFolderSelect = async (path: string) => {
   setPath(path)
-  await fetchIssues()
-  fetchStats(issues.value)
+  await probeCapabilities(path)
+
+  if (caps.value.hasBeads) {
+    await fetchIssues()
+    fetchStats(issues.value)
+  } else {
+    // No beads fetch will run, so loading must settle here.
+    isLoading.value = false
+  }
+
+  if (caps.value.hasGrace) {
+    await fetchGraceChanges(path)
+  }
+
+  // A grace-only project admitted from onboarding gets the same live refresh as
+  // one opened through the project switcher. Beads-only onboarding is unchanged.
+  if (import.meta.client && !caps.value.hasBeads && caps.value.hasGrace) {
+    startListening(path)
+    startPolling()
+  }
+
+  previousBeadsPath = path
 }
 
 // Edit context for header
@@ -190,7 +268,21 @@ const editId = computed(() => {
 
 // Mobile state
 const isMobileView = ref(false)
-const mobilePanel = ref<'dashboard' | 'issues' | 'details'>('issues')
+const mobilePanel = ref<'dashboard' | 'issues' | 'grace' | 'details'>('issues')
+
+/** Switch the center explorer tab; on mobile keep the panel in step with it. */
+const selectExplorerTab = (tab: 'issues' | 'grace') => {
+  explorerTabStorage.value = tab
+  if (!isMobileView.value || !caps.value.hasBeads || !caps.value.hasGrace) return
+  mobilePanel.value = tab === 'grace' ? 'grace' : 'issues'
+}
+
+// On mobile a nav entry is active while its explorer panel is showing; with a
+// single registry the sole explorer is active regardless of the panel name.
+const isMobileExplorerActive = (tab: 'issues' | 'grace') => {
+  if (mobilePanel.value !== 'issues' && mobilePanel.value !== 'grace') return false
+  return effectiveExplorer.value.tab === tab
+}
 
 const focusDashboard = () => {
   if (isEditMode.value || isCreatingNew.value) return
@@ -239,6 +331,11 @@ const focusIssueSearch = () => {
   if (isMobileView.value) mobilePanel.value = 'issues'
 
   const focusRenderedSearch = () => {
+    // Ctrl+F belongs to whichever explorer is on screen.
+    if (effectiveExplorer.value.tab === 'grace') {
+      const graceList = isMobileView.value ? mobileGraceListRef.value : desktopGraceListRef.value
+      return graceList?.focusSearch() ?? false
+    }
     const issueList = isMobileView.value ? mobileIssueListRef.value : desktopIssueListRef.value
     return issueList?.focusSearch() ?? false
   }
@@ -336,6 +433,8 @@ const pollForChanges = async () => {
   if (isLoading.value || isUpdating.value || showOnboarding.value || !beadsPath.value || projects.value.length === 0) {
     return
   }
+  // Nothing to refresh in a folder with no registry.
+  if (!caps.value.hasBeads && !caps.value.hasGrace) return
 
   const pollT0 = performance.now()
   let hadError = false
@@ -344,33 +443,44 @@ const pollForChanges = async () => {
   try {
     isSyncing.value = true
 
-    const path = beadsPath.value && beadsPath.value !== '.' ? beadsPath.value : undefined
+    const path = beadsPath.value
+    const apiPath = path && path !== '.' ? path : undefined
 
-    // Layer 4: Check filesystem mtime first — skip if fast check already detected change
-    if (!skipMtimeCheck) {
-      const changed = await bdCheckChanged(path)
-      recordMtimeCheck(changed)
-      if (!changed) {
-        // Nothing changed on disk — skip entire poll cycle
-        return
+    // Layer 4: Check filesystem mtime first — skip the beads fetch if the fast
+    // check already consumed the change. The mtime gate is what keeps a
+    // `.grace5` churn in a dual project from reloading issues.
+    let beadsChanged = false
+    if (caps.value.hasBeads) {
+      if (skipMtimeCheck) {
+        beadsChanged = true
+      } else {
+        beadsChanged = await bdCheckChanged(apiPath)
+        recordMtimeCheck(beadsChanged)
       }
-    }
-    skipMtimeCheck = false
-
-    // Layer 5: Changes detected — use batched command (1 IPC instead of 3)
-    const readyData = await fetchPollData()
-
-    // Update dashboard from pre-fetched data (no extra API call)
-    if (readyData) {
-      updateFromPollData(issues.value, readyData)
+      skipMtimeCheck = false
     }
 
-    // Snapshot mtime AFTER all operations (including epic bd_show calls in fetchPollData)
-    // so the next check ignores changes caused by our own poll cycle
-    await bdCheckChanged(path)
+    if (beadsChanged) {
+      // Layer 5: Changes detected — use batched command (1 IPC instead of 3)
+      const readyData = await fetchPollData()
 
-    // Tell change detection backend to ignore self-triggered events
-    notifySelfWrite()
+      // Update dashboard from pre-fetched data (no extra API call)
+      if (readyData) {
+        updateFromPollData(issues.value, readyData)
+      }
+
+      // Snapshot mtime AFTER all operations (including epic bd_show calls in fetchPollData)
+      // so the next check ignores changes caused by our own poll cycle
+      await bdCheckChanged(apiPath)
+
+      // Tell change detection backend to ignore self-triggered events
+      notifySelfWrite()
+    }
+
+    // GRACE refreshes on its own fingerprint; it never runs bd/git commands.
+    if (caps.value.hasGrace) {
+      await refreshGraceIfChanged(path)
+    }
   } catch {
     hadError = true
   } finally {
@@ -384,7 +494,16 @@ const { requestPoll, requestImmediatePoll, cancel: cancelScheduledPoll, stats: p
 
 const { active: changeDetectionActive, startListening, stopListening, notifySelfWrite } = useChangeDetection({
   onChanged: async () => {
-    requestPoll()
+    const path = beadsPath.value
+    if (!path) return
+    // The watcher emits `beads-changed` for `.grace5` edits too, so refresh the
+    // GRACE explorer first; the beads poll's mtime gate then no-ops on grace churn.
+    if (caps.value.hasGrace) {
+      await refreshGraceIfChanged(path)
+    }
+    if (caps.value.hasBeads) {
+      requestPoll()
+    }
   },
 })
 
@@ -393,11 +512,29 @@ const checkMtimeChanged = async (): Promise<boolean> => {
   if (isLoading.value || isUpdating.value || showOnboarding.value || !beadsPath.value || projects.value.length === 0) {
     return false
   }
-  const path = beadsPath.value && beadsPath.value !== '.' ? beadsPath.value : undefined
-  const changed = await bdCheckChanged(path)
-  recordMtimeCheck(changed)
-  if (changed) skipMtimeCheck = true // pollFn can skip the mtime check — we already consumed it
-  return changed
+  const path = beadsPath.value
+  let beadsChanged = false
+
+  if (caps.value.hasBeads) {
+    const changed = await bdCheckChanged(path && path !== '.' ? path : undefined)
+    recordMtimeCheck(changed)
+    if (changed) skipMtimeCheck = true // pollFn can skip the mtime check — we already consumed it
+    beadsChanged = changed
+  }
+
+  // GRACE has no separate "skip" flag: `refreshIfChanged` performs the
+  // fingerprint check AND the refresh, so the fingerprint is consumed exactly
+  // once. Its return value is not surfaced here — only a beads change should
+  // schedule an immediate beads poll.
+  if (caps.value.hasGrace) {
+    try {
+      await refreshGraceIfChanged(path)
+    } catch {
+      // A transient check failure must not break the polling loop.
+    }
+  }
+
+  return beadsChanged
 }
 
 // Adaptive polling with fast mtime detection (degrades gracefully if watcher unavailable)
@@ -427,40 +564,57 @@ onMounted(async () => {
 
   // Only fetch data if not in onboarding mode
   if (!showOnboarding.value) {
-    // Check migration BEFORE any bd command — bd >= 0.52 auto-migrates on any
-    // bd call (like `bd list`, `bd mtime`), which would bypass our migration modal
-    // that preserves labels, deps, comments, and attachments.
-    const migrationNeeded = await checkMigrationNeeded()
-    if (!migrationNeeded) {
-      if (import.meta.client) {
-        // Start change detection — native file watcher
-        if (beadsPath.value) {
-          startListening(beadsPath.value)
+    // Which registries this project has — everything below is capability-gated.
+    await probeCapabilities(beadsPath.value)
+
+    if (caps.value.hasBeads) {
+      // Check migration BEFORE any bd command — bd >= 0.52 auto-migrates on any
+      // bd call (like `bd list`, `bd mtime`), which would bypass our migration modal
+      // that preserves labels, deps, comments, and attachments.
+      const migrationNeeded = await checkMigrationNeeded()
+      if (!migrationNeeded) {
+        if (import.meta.client) {
+          // Start change detection — native file watcher
+          if (beadsPath.value) {
+            startListening(beadsPath.value)
+          }
+
+          // Start adaptive polling (handles visibility, focus, idle internally)
+          // When change detection is active, polling uses 30s safety-net instead of 1s mtime checks
+          startPolling()
+
+          // Fetch available relation types + detect bd >= 0.50 for dot-notation parent-child
+          initRelationTypes()
+        }
+        // Auto-launch probe if enabled (must complete before fetch)
+        await launchProbeIfNeeded()
+        // Auto-register with probe if enabled (fire-and-forget, never blocks UI)
+        ensureProbeRegistration(beadsPath.value)
+
+        // Check attachment refs migration (may have been auto-migrated before sync)
+        const migrationResult = await checkRefsMigration()
+        if (migrationResult === 'just_migrated') {
+          notifySuccess('Attachments migrated', 'Attachment references and folders have been updated to the new format.')
+        } else if (migrationResult) {
+          await migrateRefs()
+          notifySuccess('Attachments migrated', 'Attachment references and folders have been updated to the new format.')
         }
 
-        // Start adaptive polling (handles visibility, focus, idle internally)
-        // When change detection is active, polling uses 30s safety-net instead of 1s mtime checks
-        startPolling()
-
-        // Fetch available relation types + detect bd >= 0.50 for dot-notation parent-child
-        initRelationTypes()
+        // Sequential: bd commands can't run concurrently (Dolt SIGSEGV on parallel access)
+        fetchIssues().then(() => fetchStats(issues.value))
       }
-      // Auto-launch probe if enabled (must complete before fetch)
-      await launchProbeIfNeeded()
-      // Auto-register with probe if enabled (fire-and-forget, never blocks UI)
-      ensureProbeRegistration(beadsPath.value)
+    }
 
-      // Check attachment refs migration (may have been auto-migrated before sync)
-      const migrationResult = await checkRefsMigration()
-      if (migrationResult === 'just_migrated') {
-        notifySuccess('Attachments migrated', 'Attachment references and folders have been updated to the new format.')
-      } else if (migrationResult) {
-        await migrateRefs()
-        notifySuccess('Attachments migrated', 'Attachment references and folders have been updated to the new format.')
-      }
+    // GRACE is independent of the beads migration state — it never runs bd/git.
+    if (caps.value.hasGrace) {
+      await fetchGraceChanges(beadsPath.value)
+    }
 
-      // Sequential: bd commands can't run concurrently (Dolt SIGSEGV on parallel access)
-      fetchIssues().then(() => fetchStats(issues.value))
+    // Grace-only projects still need live refresh; beads-only startup above is
+    // unchanged (it starts the watcher only when no migration is pending).
+    if (import.meta.client && !caps.value.hasBeads && caps.value.hasGrace && beadsPath.value) {
+      startListening(beadsPath.value)
+      startPolling()
     }
   }
 
@@ -602,6 +756,9 @@ const handlePathChange = async () => {
   isCreatingNew.value = false
   clearIssues()  // Reset issue list so new-issue detection doesn't flash all rows
   clearStats()   // Reset stats so previous project's ready work doesn't persist
+  clearGrace()   // Same for GRACE: never show the previous project's changes
+  caps.value = { hasBeads: false, hasGrace: false }
+  skipMtimeCheck = false
 
   // Stop polling + change detection during project switch to prevent:
   // 1. Concurrent bd calls from old project's poll cycle
@@ -614,40 +771,68 @@ const handlePathChange = async () => {
 return
   }
 
-  try {
-    // Pre-flight checks in parallel: cleanup stale locks + migration check + mtime reset
-const [, , migrationNeeded] = await Promise.all([
-      bdCleanupStaleLocks(beadsPath.value),
-      bdResetMtime(),
-      checkMigrationNeeded(),
-    ])
+  // Which registries this project has — decided BEFORE any fetch so a grace-only
+  // project never touches bd/git (and a probe failure simply means "no registries").
+  await probeCapabilities(beadsPath.value)
 
-    if (thisGeneration !== pathChangeGeneration) {
+  if (thisGeneration !== pathChangeGeneration) {
 return
-    }
+  }
 
-if (!migrationNeeded) {
-      // Register new project with probe before fetching (probe needs to know the project)
-      await ensureProbeRegistration(beadsPath.value)
+  // Mobile may have been parked on the GRACE panel of a project that had one.
+  if (!caps.value.hasGrace && mobilePanel.value === 'grace') {
+    mobilePanel.value = 'issues'
+  }
+
+  let migrationBlocked = false
+
+  try {
+    if (caps.value.hasBeads) {
+      // Pre-flight checks in parallel: cleanup stale locks + migration check + mtime reset
+const [, , migrationNeeded] = await Promise.all([
+        bdCleanupStaleLocks(beadsPath.value),
+        bdResetMtime(),
+        checkMigrationNeeded(),
+      ])
 
       if (thisGeneration !== pathChangeGeneration) {
 return
       }
 
-      // Check attachment refs migration (may have been auto-migrated before sync)
-      const migrationResult2 = await checkRefsMigration()
-      if (migrationResult2 === 'just_migrated') {
-        notifySuccess('Attachments migrated', 'Attachment references and folders have been updated to the new format.')
-      } else if (migrationResult2) {
-        await migrateRefs()
-        notifySuccess('Attachments migrated', 'Attachment references and folders have been updated to the new format.')
-      }
+if (!migrationNeeded) {
+        // Register new project with probe before fetching (probe needs to know the project)
+        await ensureProbeRegistration(beadsPath.value)
 
-      // IMPORTANT: bd commands must run sequentially — concurrent Dolt embedded access
-      // causes SIGSEGV crashes (nil pointer dereference in dolthub/driver).
-      await fetchIssues()
-      // Fire-and-forget: stats update doesn't block issue list display
-      fetchStats(issues.value)
+        if (thisGeneration !== pathChangeGeneration) {
+return
+        }
+
+        // Check attachment refs migration (may have been auto-migrated before sync)
+        const migrationResult2 = await checkRefsMigration()
+        if (migrationResult2 === 'just_migrated') {
+          notifySuccess('Attachments migrated', 'Attachment references and folders have been updated to the new format.')
+        } else if (migrationResult2) {
+          await migrateRefs()
+          notifySuccess('Attachments migrated', 'Attachment references and folders have been updated to the new format.')
+        }
+
+        // IMPORTANT: bd commands must run sequentially — concurrent Dolt embedded access
+        // causes SIGSEGV crashes (nil pointer dereference in dolthub/driver).
+        await fetchIssues()
+        // Fire-and-forget: stats update doesn't block issue list display
+        fetchStats(issues.value)
+      } else {
+        migrationBlocked = true
+      }
+    }
+
+    if (thisGeneration !== pathChangeGeneration) {
+return
+    }
+
+    // GRACE never runs bd/git and does not wait on a beads migration.
+    if (caps.value.hasGrace) {
+      await fetchGraceChanges(beadsPath.value)
     }
   } catch (e) {
     // Don't let pre-flight errors block the app — log and continue
@@ -658,8 +843,11 @@ return
 return
   }
 
+  // A pending beads migration keeps the old "Loading…" surface behind its dialog.
+  if (!migrationBlocked) isLoading.value = false
+
   // Resume change detection + polling AFTER data is loaded (avoids self-triggered cascade)
-  if (beadsPath.value) {
+  if (beadsPath.value && (caps.value.hasBeads || caps.value.hasGrace)) {
     await startListening(beadsPath.value)
     notifySelfWrite()  // Arm cooldown so backend ignores bd's recent .beads/ writes
   }
@@ -670,11 +858,16 @@ const handleReset = () => {
   // Last project removed - clear all data to show onboarding
   clearIssues()
   clearStats()
+  clearGrace()
+  caps.value = { hasBeads: false, hasGrace: false }
   isEditMode.value = false
   isCreatingNew.value = false
 }
 
 const handleAddIssue = () => {
+  // Issues are a beads concept: a grace-only project has nowhere to create one.
+  if (!caps.value.hasBeads) return
+  if (effectiveExplorer.value.tab !== 'issues') selectExplorerTab('issues')
   selectIssue(null)
   isCreatingNew.value = true
   isEditMode.value = true
@@ -698,6 +891,45 @@ const handleSelectIssue = async (issue: Issue) => {
   // Then fetch full details (including extended fields) in background
   await fetchIssue(issue.id)
 }
+
+const handleSelectChange = async (change: GraceChangeSummary) => {
+  if (!beadsPath.value) return
+  if (isMobileView.value) {
+    mobilePanel.value = 'details'
+  } else {
+    isRightSidebarOpen.value = true
+  }
+  // Fetch the full detail; the panel renders GraceDetail from `grace.detail`.
+  await selectGraceChange(beadsPath.value, change)
+}
+
+// The filters facade writes through to the persisted per-project refs; assign
+// fields, never mutate the stored arrays in place.
+const handleGraceFiltersUpdate = (next: GraceFilters) => {
+  graceFilters.stage = next.stage
+  graceFilters.authorization = next.authorization
+  graceFilters.scope = next.scope
+}
+
+// New object: `useGrace` stores the sort default and must never see it mutated.
+const handleGraceSort = (field: 'id' | 'title' | 'stage' | 'revision', direction: 'asc' | 'desc') => {
+  graceSort.value = { field, direction }
+}
+
+const clearGraceFilters = () => {
+  // Clearing must leave no active chip: the scope chip disappears at 'all'.
+  graceFilters.stage = []
+  graceFilters.authorization = []
+  graceFilters.scope = 'all'
+  graceSearch.value = ''
+}
+
+// Pin mismatch or missing `.grace5/kernel-version`: parse anyway, warn visibly.
+const gracePinWarning = computed<string | null>(() => {
+  const result = graceListResult.value
+  if (!caps.value.hasGrace || !result || result.pinSupported) return null
+  return `GRACE state pin ${result.pin ?? 'missing'} — explorer targets 0.9.0; structural view only`
+})
 
 const handleEditIssueFromTable = async (issue: Issue) => {
   // First set the issue from list for immediate feedback
@@ -920,6 +1152,8 @@ const handleKpiClick = (kpi: KpiFilter) => {
 watch(
   () => JSON.stringify([filters.value.status, filters.value.type, filters.value.priority]),
   () => {
+    // Grace-only projects render no issues panel: never issue a bd command.
+    if (!caps.value.hasBeads) return
     // Don't refetch if search is active (search ignores filters)
     if (!filters.value.search?.trim()) {
       fetchIssues()
@@ -1003,8 +1237,17 @@ watch(
             </div>
             </div>
 
-            <div v-if="!stats" class="flex items-center justify-center py-8">
+            <div v-if="!stats" class="flex items-center justify-center px-2 py-8 text-center">
               <OnboardingCard v-if="showOnboarding" @browse="openFolderPicker" />
+              <!-- Grace-only project: no beads KPIs exist; never a stuck "Loading..." -->
+              <div v-else-if="isGraceOnlyProject" class="space-y-1">
+                <p class="text-sm font-medium">
+                  No beads registry in this project — GRACE explorer active
+                </p>
+                <p class="text-xs text-muted-foreground">
+                  Browse changes in the center panel.
+                </p>
+              </div>
               <span v-else class="text-muted-foreground text-sm">Loading...</span>
             </div>
           </div>
@@ -1048,58 +1291,95 @@ watch(
         <!-- Onboarding: Prerequisites Card -->
         <PrerequisitesCard v-if="showOnboarding" @browse="openFolderPicker" />
 
-        <!-- Normal: Issues Toolbar + Table -->
+        <!-- Normal: explorer(s) — tab strip only when two registries exist -->
         <template v-else>
-          <IssueListPanel
-            ref="desktopIssueListRef"
-            v-model:search="searchValue"
-            v-model:selected-ids="selectedIds"
-            :filters="{ status: filters.status, type: filters.type, priority: filters.priority, labels: filters.labels, assignee: filters.assignee }"
-            :available-labels="availableLabels"
-            :available-assignees="availableAssignees"
-            :has-selection="multiSelectMode ? selectedIds.length > 0 : !!selectedIssue"
-            :multi-select-mode="multiSelectMode"
-            :selected-count="selectedIds.length"
-            :columns="columns"
-            :is-search-active="isSearchActive"
-            :issues="paginatedIssues"
-            :grouped-issues="groupedIssues"
-            :selected-id="selectedIssue?.id"
-            :has-more="hasMore"
-            :total-count="filteredIssues.length"
-            :sort-field="sortField"
-            :sort-direction="sortDirection"
-            :newly-added-ids="newlyAddedIds"
-            :pinned-ids="pinnedIssueIds"
-            @add="handleAddIssue"
-            @delete="handleDeleteIssue"
-            @toggle-multi-select="toggleMultiSelect"
-            @update:columns="setColumns"
-            @reset-columns="resetColumns"
-            @toggle-status="toggleStatus"
-            @toggle-type="toggleType"
-            @toggle-priority="togglePriority"
-            @toggle-label="toggleLabelFilter"
-            @toggle-assignee="toggleAssignee"
-            @remove-label="handleRemoveLabelFilter"
-            @clear-filters="clearFilters"
-            @select="handleSelectIssue"
-            @edit="handleEditIssueFromTable"
-            @deselect="handleDeselectIssue"
-            @load-more="loadMore"
-            @sort="setSort"
-            @toggle-pin="togglePin"
+          <div v-if="effectiveExplorer.showStrip" class="flex border-b border-border bg-card">
+            <button
+              class="flex-1 py-3 text-sm font-medium transition-colors"
+              :class="effectiveExplorer.tab === 'issues' ? 'text-primary border-b-2 border-primary' : 'text-muted-foreground'"
+              @click="selectExplorerTab('issues')"
+            >
+              Issues ({{ filteredIssues.length }})
+            </button>
+            <button
+              class="flex-1 py-3 text-sm font-medium transition-colors"
+              :class="effectiveExplorer.tab === 'grace' ? 'text-primary border-b-2 border-primary' : 'text-muted-foreground'"
+              @click="selectExplorerTab('grace')"
+            >
+              GRACE ({{ graceStatsData.open }})
+            </button>
+          </div>
+
+          <!-- GRACE explorer: read-only, never opens artifacts itself (GraceDetail owns that) -->
+          <GraceListPanel
+            v-if="effectiveExplorer.tab === 'grace'"
+            ref="desktopGraceListRef"
+            v-model:search="graceSearch"
+            :filtered-changes="graceFilteredChanges"
+            :selected-id="graceSelectedChange?.id ?? null"
+            :filters="graceFilters"
+            :sort-field="graceSort.field"
+            :sort-direction="graceSort.direction"
+            :is-loading="graceLoading"
+            :pin-warning="gracePinWarning"
+            @update:filters="handleGraceFiltersUpdate"
+            @select="handleSelectChange"
+            @sort="handleGraceSort"
+            @clear-filters="clearGraceFilters"
           />
 
-          <div v-if="isLoading" class="text-center text-muted-foreground py-4">
-            Loading...
-          </div>
+          <template v-else>
+            <IssueListPanel
+              ref="desktopIssueListRef"
+              v-model:search="searchValue"
+              v-model:selected-ids="selectedIds"
+              :filters="{ status: filters.status, type: filters.type, priority: filters.priority, labels: filters.labels, assignee: filters.assignee }"
+              :available-labels="availableLabels"
+              :available-assignees="availableAssignees"
+              :has-selection="multiSelectMode ? selectedIds.length > 0 : !!selectedIssue"
+              :multi-select-mode="multiSelectMode"
+              :selected-count="selectedIds.length"
+              :columns="columns"
+              :is-search-active="isSearchActive"
+              :issues="paginatedIssues"
+              :grouped-issues="groupedIssues"
+              :selected-id="selectedIssue?.id"
+              :has-more="hasMore"
+              :total-count="filteredIssues.length"
+              :sort-field="sortField"
+              :sort-direction="sortDirection"
+              :newly-added-ids="newlyAddedIds"
+              :pinned-ids="pinnedIssueIds"
+              @add="handleAddIssue"
+              @delete="handleDeleteIssue"
+              @toggle-multi-select="toggleMultiSelect"
+              @update:columns="setColumns"
+              @reset-columns="resetColumns"
+              @toggle-status="toggleStatus"
+              @toggle-type="toggleType"
+              @toggle-priority="togglePriority"
+              @toggle-label="toggleLabelFilter"
+              @toggle-assignee="toggleAssignee"
+              @remove-label="handleRemoveLabelFilter"
+              @clear-filters="clearFilters"
+              @select="handleSelectIssue"
+              @edit="handleEditIssueFromTable"
+              @deselect="handleDeselectIssue"
+              @load-more="loadMore"
+              @sort="setSort"
+              @toggle-pin="togglePin"
+            />
+
+            <div v-if="isLoading" class="text-center text-muted-foreground py-4">
+              Loading...
+            </div>
+          </template>
         </template>
       </main>
 
       <!-- Right Sidebar - Details (hidden when no selection and not in edit mode) -->
       <aside
-        v-if="selectedIssue || isEditMode || isCreatingNew || isRightSidebarOpen"
+        v-if="selectedIssue || isEditMode || isCreatingNew || isRightSidebarOpen || (effectiveExplorer.tab === 'grace' && graceSelectedChange)"
         ref="rightPanelRef"
         class="bg-card flex flex-col relative overflow-hidden outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/50"
         :class="[
@@ -1144,6 +1424,18 @@ watch(
 
         <!-- Sidebar content -->
         <template v-if="isRightSidebarOpen">
+          <!-- GRACE tab: read-only change detail. `open-file` is observation-only;
+               GraceDetail already opens the artifact itself, so no listener here. -->
+          <div v-if="effectiveExplorer.tab === 'grace' && !isEditMode && !isCreatingNew" class="flex-1 min-h-0">
+            <GraceDetail
+              :detail="graceDetail"
+              :is-loading="graceDetailLoading"
+              :pin-warning="gracePinWarning"
+              :error="graceError"
+            />
+          </div>
+
+          <template v-else>
           <!-- Fixed header for issue preview -->
           <IssueDetailHeader
             v-if="selectedIssue && !isEditMode && !isCreatingNew"
@@ -1201,6 +1493,7 @@ watch(
               </div>
             </div>
           </ScrollArea>
+          </template>
         </template>
 
         <!-- Collapsed state icon -->
@@ -1227,11 +1520,20 @@ watch(
           Dashboard
         </button>
         <button
+          v-if="caps.hasBeads"
           class="flex-1 py-3 text-sm font-medium transition-colors"
-          :class="mobilePanel === 'issues' ? 'text-primary border-b-2 border-primary' : 'text-muted-foreground'"
-          @click="mobilePanel = 'issues'"
+          :class="isMobileExplorerActive('issues') ? 'text-primary border-b-2 border-primary' : 'text-muted-foreground'"
+          @click="selectExplorerTab('issues')"
         >
           Issues ({{ filteredIssues.length }})
+        </button>
+        <button
+          v-if="caps.hasGrace"
+          class="flex-1 py-3 text-sm font-medium transition-colors"
+          :class="isMobileExplorerActive('grace') ? 'text-primary border-b-2 border-primary' : 'text-muted-foreground'"
+          @click="selectExplorerTab('grace')"
+        >
+          GRACE ({{ graceStatsData.open }})
         </button>
         <button
           class="flex-1 py-3 text-sm font-medium transition-colors"
@@ -1259,6 +1561,7 @@ watch(
             :kpi-grid-cols="2"
             :active-kpi-filter="activeKpiFilter"
             :show-onboarding="showOnboarding"
+            :grace-only="isGraceOnlyProject"
             @select-issue="handleSelectIssue"
             @kpi-click="handleKpiClick"
             @reorder-pinned="reorderPinned"
@@ -1269,14 +1572,32 @@ watch(
         </div>
       </ScrollArea>
 
-      <!-- Issues Panel -->
-      <div v-else-if="mobilePanel === 'issues'" class="flex-1 flex flex-col overflow-hidden">
+      <!-- Explorer Panel (issues, or the GRACE explorer when it is the only registry) -->
+      <div v-else-if="mobilePanel === 'issues' || mobilePanel === 'grace'" class="flex-1 flex flex-col overflow-hidden">
         <!-- Onboarding: Prerequisites Card -->
         <PrerequisitesCard v-if="showOnboarding" @browse="openFolderPicker" />
 
+        <!-- Normal: GRACE explorer (tab-strip entry, or the bare grace-only explorer) -->
+        <GraceListPanel
+          v-else-if="effectiveExplorer.tab === 'grace'"
+          ref="mobileGraceListRef"
+          v-model:search="graceSearch"
+          :filtered-changes="graceFilteredChanges"
+          :selected-id="graceSelectedChange?.id ?? null"
+          :filters="graceFilters"
+          :sort-field="graceSort.field"
+          :sort-direction="graceSort.direction"
+          :is-loading="graceLoading"
+          :pin-warning="gracePinWarning"
+          @update:filters="handleGraceFiltersUpdate"
+          @select="handleSelectChange"
+          @sort="handleGraceSort"
+          @clear-filters="clearGraceFilters"
+        />
+
         <!-- Normal: Issues Toolbar and Table -->
         <IssueListPanel
-          v-if="!showOnboarding"
+          v-else
           ref="mobileIssueListRef"
           v-model:search="searchValue"
           v-model:selected-ids="selectedIds"
@@ -1320,6 +1641,17 @@ watch(
 
       <!-- Details Panel -->
       <div v-else-if="mobilePanel === 'details'" ref="rightPanelRef" class="flex-1 flex flex-col overflow-hidden outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/50" tabindex="-1">
+        <!-- GRACE tab: read-only change detail (GraceDetail opens artifacts itself) -->
+        <div v-if="effectiveExplorer.tab === 'grace' && !isEditMode && !isCreatingNew" class="flex-1 min-h-0">
+          <GraceDetail
+            :detail="graceDetail"
+            :is-loading="graceDetailLoading"
+            :pin-warning="gracePinWarning"
+            :error="graceError"
+          />
+        </div>
+
+        <template v-else>
         <!-- Fixed header for issue preview -->
         <IssueDetailHeader
           v-if="selectedIssue && !isEditMode && !isCreatingNew"
@@ -1376,6 +1708,7 @@ watch(
             </div>
           </div>
         </ScrollArea>
+        </template>
       </div>
       </div>
     </div>

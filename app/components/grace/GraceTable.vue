@@ -40,6 +40,19 @@ const visibleColumns = computed(() => props.columns.filter(col => col.visible))
 
 const isSortable = (columnId: string) => sortableFields.includes(columnId as GraceSortField)
 
+// Keyboard parity with IssueTable: arrows move a focused row inside the
+// scroll container, Enter opens it. Same composable, same data-attribute hook.
+const changeIds = computed(() => props.changes.map(change => change.id))
+
+const { setFocused, handleKeydown, isFocused } = useKeyboardNavigation({
+  itemIds: changeIds,
+  onSelect: (id) => {
+    const change = props.changes.find(c => c.id === id)
+    if (change) emit('select', change)
+  },
+  dataAttribute: 'data-grace-id',
+})
+
 const toggleSort = (columnId: string) => {
   if (!isSortable(columnId)) return
   const field = columnId as GraceSortField
@@ -52,7 +65,7 @@ const toggleSort = (columnId: string) => {
 </script>
 
 <template>
-  <div class="h-full rounded border border-border overflow-auto outline-none">
+  <div class="h-full rounded border border-border overflow-auto outline-none" tabindex="0" @keydown="handleKeydown">
     <Table>
       <TableHeader>
         <TableRow class="bg-secondary/30 hover:bg-secondary/30">
@@ -110,9 +123,13 @@ const toggleSort = (columnId: string) => {
           <TableRow
             v-for="change in changes"
             :key="change.id"
+            :data-grace-id="change.id"
             class="cursor-pointer"
-            :class="selectedId === change.id ? 'bg-accent/50 hover:bg-accent/70' : 'hover:bg-muted/50'"
-            @click="emit('select', change)"
+            :class="[
+              selectedId === change.id ? 'bg-accent/50 hover:bg-accent/70' : 'hover:bg-muted/50',
+              isFocused(change.id) ? 'bg-primary/10 ring-1 ring-inset ring-primary/40' : '',
+            ]"
+            @click="setFocused(change.id); emit('select', change)"
           >
             <TableCell
               v-for="col in visibleColumns"

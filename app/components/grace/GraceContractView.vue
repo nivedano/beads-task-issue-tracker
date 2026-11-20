@@ -1,11 +1,10 @@
 <script setup lang="ts">
 import type { GraceContract } from '~/types/grace'
+import { graceSectionHeading as sectionHeading } from '~/components/grace/grace-display'
 
 defineProps<{
   contract: GraceContract
 }>()
-
-const sectionHeading = 'text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-1'
 </script>
 
 <template>

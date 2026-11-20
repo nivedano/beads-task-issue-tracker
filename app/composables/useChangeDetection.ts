@@ -128,6 +128,9 @@ function createWatcherBackend(options: UseChangeDetectionOptions) {
 
     try {
       const { listen } = await import('@tauri-apps/api/event')
+      // The Rust watcher watches `.beads` and `.grace5` alike (grace-only and
+      // dual projects included) and emits the same `beads-changed` event for
+      // both; the handler in index.vue branches on the project's capabilities.
       const unlistenFn = await listen<{ path: string }>('beads-changed', (event) => {
         handleEvent(event.payload)
       })
