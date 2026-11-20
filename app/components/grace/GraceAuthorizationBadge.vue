@@ -22,14 +22,20 @@ const authorizationConfig: Record<GraceAuthorization, { label: string; class: st
 }
 
 const config = computed(() => authorizationConfig[props.authorization] ?? authorizationConfig.unapproved)
+
+const badgeClass = computed(() => [
+  config.value.class,
+  props.size === 'sm' ? 'text-[10px] px-1.5 py-0' : '',
+])
 </script>
 
 <template>
   <Tooltip v-if="note">
     <TooltipTrigger as-child>
       <Badge
-        :class="[config.class, size === 'sm' ? 'text-[10px] px-1.5 py-0' : '', 'cursor-help']"
+        :class="[...badgeClass, 'cursor-help']"
         variant="secondary"
+        tabindex="0"
       >
         {{ config.label }}
       </Badge>
@@ -38,7 +44,7 @@ const config = computed(() => authorizationConfig[props.authorization] ?? author
       <p class="text-xs max-w-xs">{{ note }}</p>
     </TooltipContent>
   </Tooltip>
-  <Badge v-else :class="[config.class, size === 'sm' ? 'text-[10px] px-1.5 py-0' : '']" variant="secondary">
+  <Badge v-else :class="badgeClass" variant="secondary">
     {{ config.label }}
   </Badge>
 </template>

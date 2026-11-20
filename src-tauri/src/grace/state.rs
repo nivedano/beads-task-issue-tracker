@@ -52,6 +52,17 @@ pub fn contract_sha256(bytes: &[u8]) -> String {
     hex
 }
 
+/// The approval that governs the contract's current revision: the first record
+/// carrying that revision (kernel `records.approvals` `find` order).
+fn governing_approval(
+    contract_revision: u32,
+    approvals: &[GraceApproval],
+) -> Option<&GraceApproval> {
+    approvals
+        .iter()
+        .find(|approval| approval.revision == contract_revision)
+}
+
 /// The kernel's four authorization values, in its branch order, for the
 /// approval that governs the contract's current revision.
 pub fn authorization(
@@ -59,10 +70,7 @@ pub fn authorization(
     contract_hash: &str,
     approvals: &[GraceApproval],
 ) -> &'static str {
-    match approvals
-        .iter()
-        .find(|approval| approval.revision == contract_revision)
-    {
+    match governing_approval(contract_revision, approvals) {
         None => "unapproved",
         Some(approval) if approval.decision == "rejected" => "rejected",
         Some(approval) if approval.contract_sha256 != contract_hash => "altered after approval",
@@ -79,9 +87,7 @@ fn authorization_note(
     contract_hash: &str,
     approvals: &[GraceApproval],
 ) -> Option<String> {
-    let governing = approvals
-        .iter()
-        .find(|approval| approval.revision == contract_revision);
+    let governing = governing_approval(contract_revision, approvals);
     match governing {
         // Kernel branch order: a rejected decision outranks a stale hash.
         Some(approval) if approval.decision == "rejected" => {
@@ -98,8 +104,11 @@ fn authorization_note(
         )),
         Some(_) => None,
         None => {
+            // Kernel scope (state.ts, the last approval that still governs):
+            // a reverted contract never cites a later-revision record.
             let last = approvals
                 .iter()
+                .filter(|approval| approval.revision <= contract_revision)
                 .max_by(|left, right| left.revision.cmp(&right.revision));
             Some(match last {
                 None => format!("no approval for revision {contract_revision}"),
@@ -699,6 +708,56 @@ mod tests {
         assert_eq!(
             summary.authorization_note.as_deref(),
             Some("no approval for revision 7 — last: approval-6.xml, approved 2026-11-20")
+        );
+
+        records.approvals[0].date = None;
+        let undated = summarize(
+            "C-0019-term-checks",
+            false,
+            Some(&contract),
+            Some(hash),
+            &records,
+            None,
+        );
+        assert_eq!(
+            undated.authorization_note.as_deref(),
+            Some("no approval for revision 7 — last: approval-6.xml, approved")
+        );
+    }
+
+    #[test]
+    fn note_ignores_approvals_for_a_later_revision() {
+        let hash = "abc";
+        let contract = contract_with(Vec::new());
+        let mut records = empty_records();
+        records
+            .approvals
+            .push(approval_record(2, "approved", hash));
+
+        let summary = summarize("C-1", false, Some(&contract), Some(hash), &records, None);
+
+        assert_eq!(summary.authorization, "unapproved");
+        assert_eq!(
+            summary.authorization_note.as_deref(),
+            Some("no approval for revision 1")
+        );
+    }
+
+    #[test]
+    fn note_falls_back_to_the_kernel_phrase_for_an_empty_rejection() {
+        let hash = "abc";
+        let contract = contract_with(Vec::new());
+        let mut records = empty_records();
+        records
+            .approvals
+            .push(approval_record(1, "rejected", hash));
+
+        let summary = summarize("C-1", false, Some(&contract), Some(hash), &records, None);
+
+        assert_eq!(summary.authorization, "rejected");
+        assert_eq!(
+            summary.authorization_note.as_deref(),
+            Some("no approval for revision 1")
         );
     }
 

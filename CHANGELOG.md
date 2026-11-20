@@ -12,7 +12,10 @@
   filters, search, sorting, per-project persistence and keyboard navigation. The detail panel shows
   the lifecycle stepper, the contract's sections, checks with their latest recorded verdicts and an
   in-app log viewer, the records timeline (approvals, runs with per-check receipts, reviews, close,
-  legacy briefs) and rendered `notes.md`. Nothing is written to `.grace5/` and nothing is
+  legacy briefs) and rendered `notes.md`. An authorization badge tooltip and a detail-header warning
+  explain a non-approved value: revision drift names the last approval, a rejection quotes its
+  statement, and an altered contract names the approval whose hash no longer matches. Nothing is
+  written to `.grace5/` and nothing is
   re-verified — `grace5 check`/`status` remains the authority, malformed changes are flagged not
   hidden, and a pin other than 0.9.0 warns but still parses
 - **Center tab strip**: projects containing both registries show `Issues (n) | GRACE (n)` and
