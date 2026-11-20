@@ -184,5 +184,6 @@ describe('useGrace', () => {
     expect(grace.error.value).toBe('grace_list exploded')
     expect(graceShow).not.toHaveBeenCalled()
     expect(grace.selectedChange.value?.id).toBe('C-0001')
+    expect(grace.detail.value?.summary.id).toBe('C-0001')
   })
 })

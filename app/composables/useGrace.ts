@@ -130,7 +130,9 @@ async function refreshIfChanged(path: string): Promise<boolean> {
   if (startedAt !== listGeneration) return false
 
   const outcome = await runFetchChanges(path)
-  if (outcome !== 'committed') return false
+  // `runFetchChanges` was called synchronously after the pre-check, so our fetch
+  // took generation `startedAt + 1`; anything else means it was superseded.
+  if (outcome !== 'committed' || listGeneration !== startedAt + 1) return false
 
   const selected = selectedChange.value
   if (selected) {
