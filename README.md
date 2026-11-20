@@ -1,6 +1,6 @@
 # Beads Task-Issue Tracker
 
-A lightweight, standalone desktop application for managing [Beads](https://github.com/steveyegge/beads) issues outside of your IDE.
+A lightweight, standalone desktop application for managing [Beads](https://github.com/Dicklesworthstone/beads_rust) issues outside of your IDE.
 
 ![Beads Task-Issue Tracker](docs/screenshots/app-overview-1.23.0.png)
 
@@ -11,18 +11,18 @@ A lightweight, standalone desktop application for managing [Beads](https://githu
 >
 > As the Beads ecosystem evolves toward autonomous multi-agent orchestration, we believe the transition should be progressive. Most developers today work **with** AI, not behind it — they need to see what's happening, understand it, and stay in control. That's what PaiR is built for: a smooth, step-by-step transition from pair programming to broader AI delegation, without losing visibility along the way.
 >
-> PaiR is fully independent: built-in CLI, own storage format (`.pair/`), zero external dependencies. Your existing `.beads/` data is never modified or overwritten — PaiR stores everything in its own directory. **Migration is automatic** for projects using `bd` 0.49.x (pre-Dolt) or `br` 0.7.x. Projects running `bd` 0.50+ (Dolt-based) are not currently supported for migration.
+> PaiR is fully independent: built-in CLI, own storage format (`.pair/`), zero external dependencies. Your existing `.beads/` data is never modified or overwritten — PaiR stores everything in its own directory. **Migration is automatic** for projects using `br` 0.7.x.
 >
-> The Beads Task-Issue Tracker remains available and functional with `bd` 0.49.x and `br` 0.7.x, but active development has moved to PaiR.
+> The Beads Task-Issue Tracker remains available and functional with `br` 0.7.x, but active development has moved to PaiR.
 
 ## Why This App?
 
-[Beads](https://github.com/steveyegge/beads) is an AI-native issue tracker that stores issues directly in your codebase (in a `.beads` folder). Compatible with both [`br`](https://github.com/Dicklesworthstone/beads_rust) (Rust, recommended) and [`bd`](https://github.com/steveyegge/beads) (Go).
+[Beads](https://github.com/Dicklesworthstone/beads_rust) is an AI-native issue tracker that stores issues directly in your codebase (in a `.beads` folder). This app works with [`br`](https://github.com/Dicklesworthstone/beads_rust) (beads_rust).
 
 > [!IMPORTANT]
 > **A human interface for AI-piloted issue tracking**
 >
-> The Beads CLI (`br` or `bd`) is designed for AI agents — they create issues, update statuses, and pilot workflows programmatically. But **humans need visibility and control** over what the AI is doing.
+> The Beads CLI (`br`) is designed for AI agents — they create issues, update statuses, and pilot workflows programmatically. But **humans need visibility and control** over what the AI is doing.
 >
 > This application lets you **observe** what the AI is driving, and **step in** to edit, correct, or redirect at any point. The workflow is collaborative — the AI pilots through the CLI, and you use this app as your control panel.
 >
@@ -43,14 +43,14 @@ This project is a reimplementation of the Beads UI as a native desktop app using
 ## Features
 
 ### Live Updates — No Polling
-The app uses a **native file watcher** on the `.beads` and `.grace5/` directories. When an AI agent (or anyone) creates, updates, or closes an issue via `br` or `bd`, the change appears in real time — no refresh button, no polling interval. This is critical when monitoring AI-driven workflows where issues change rapidly.
+The app uses a **native file watcher** on the `.beads` and `.grace5/` directories. When an AI agent (or anyone) creates, updates, or closes an issue via `br`, the change appears in real time — no refresh button, no polling interval. This is critical when monitoring AI-driven workflows where issues change rapidly.
 
 ### Dependencies & Relations
 - **Add/remove blockers** from the issue preview via a search modal
 - **Navigate** to any dependency or relation by clicking its row (short ID + title)
 - **Blocked indicator** in the issue table for issues with unresolved blockers
 - **Add/remove relations** (`relates-to`, `duplicates`, `supersedes`, `caused-by`, etc.) between any issues, including closed ones
-- **Dynamic relation types** adapted to your CLI client (`bd` or `br`)
+- **Relation types** from `br` (`relates-to`, `duplicates`, `supersedes`, `caused-by`, etc.)
 
 ### Core
 - **Dashboard**: Visual overview of issues by status, type, and priority
@@ -63,7 +63,7 @@ A read-only view of `.grace5/` changes living beside the beads registry. The app
 - **Changes table**: lifecycle stage (`prepared` → `approved` → `executing` → `reviewed` → `closed`), authorization (`unapproved` / `approved` / `rejected` / `altered after approval`, computed from the contract's raw bytes exactly like the kernel), latest `passed/required` check counts, review status with open findings, and revision. Filter by stage, authorization and open/closed, search id/title/Problem text, sort by column, and navigate rows with the keyboard
 - **Change detail**: lifecycle stepper, the contract's sections (problem, change, constraints with rule citations, non-goals, acceptance with check references, affected paths/names/protected, environments, decisions), checks with their latest recorded verdicts and an in-app log viewer, the records timeline (approvals, runs with per-check receipts, reviews with findings, close, and legacy briefs opened externally), and rendered `notes.md`
 - **Tab rule**: when a project has both `.beads/` and `.grace5/`, the center panel shows `Issues (n) | GRACE (n)` and remembers the active tab per project. A project with only one registry renders that explorer bare, with no strip
-- **Grace-only projects** can be added and opened: the app watches `.grace5/`, never runs `bd`/`git` for them, and the dashboard shows a “GRACE explorer active” notice instead of an empty beads dashboard
+- **Grace-only projects** can be added and opened: the app watches `.grace5/`, never runs `br`/`git` for them, and the dashboard shows a “GRACE explorer active” notice instead of an empty beads dashboard
 - **Read-only and structural**: nothing is ever written to `.grace5/`, approvals are displayed as recorded and check counts are display-level — `grace5 check`/`status` remains the authority. Authorization matches the kernel for schema-valid records; structurally invalid records are flagged, not re-validated. Malformed changes are flagged with their structural defect and never hidden, and a kernel pin other than `0.9.0` shows a warning banner but still parses
 
 ### Attachments
@@ -88,7 +88,7 @@ A read-only view of `.grace5/` changes living beside the beads registry. The app
 - **Zoom Controls**: Adjust text scale from 75% to 150% (Alt+Click to reset). Only the type scale grows — spacing and the header stay put
 
 ### Settings & Tools
-- **Dual CLI support**: Auto-detects [`br`](https://github.com/Dicklesworthstone/beads_rust) (Rust, recommended) and [`bd`](https://github.com/steveyegge/beads) (Go) — switch between them via Settings (`Cmd/Ctrl+,`), feature profiles adapt automatically
+- **Beads Rust CLI**: Runs [`br`](https://github.com/Dicklesworthstone/beads_rust) (SQLite + JSONL), the only supported client
 - **Theme System**: 4 themes — Classic Light, Classic Dark, Dark Flat, and Neon — with per-theme badge styling, glow effects, and one-click cycling via the header icon
 - **Debug Panel**: Live log viewer with auto-refresh, accessible via `Cmd/Ctrl+Shift+L`
 - **Database Repair**: Automatic detection and repair of schema migration issues
@@ -113,17 +113,17 @@ This means the attachment storage lives inside the `.beads` directory and gets v
 Beyond just viewing issues, this app is part of a broader development workflow powered by [Claude Code](https://claude.ai/code):
 
 - **Centralized task management**: Beads issues live in the codebase, making them accessible to AI coding assistants
-- **AI-driven development**: Claude Code can read, create, and update issues directly via `br` or `bd`, keeping context within the coding session
+- **AI-driven development**: Claude Code can read, create, and update issues directly via `br`, keeping context within the coding session
 - **External bug sync**: Custom commands can import bugs from external systems (Jira, Redmine, etc.) into Beads
 - **Daily planning**: Quickly review and prioritize tasks for the day without switching contexts
 
 ## Prerequisites
 
-> **Important**: This app requires a Beads CLI to be installed on your system. It acts as a graphical interface for the Beads command-line tool.
+> **Important**: This app requires the Beads Rust CLI (`br`) to be installed on your system. It acts as a graphical interface for the `br` command-line tool.
 
-### Recommended: `br` (beads_rust)
+### Install `br` (beads_rust)
 
-[**beads_rust**](https://github.com/Dicklesworthstone/beads_rust) (`br`) is our **recommended CLI** — it's faster, more optimized, and built on the proven SQLite + JSONL architecture. This is our primary choice going forward. Verified with `br` 0.7.4; the latest release is 0.7.6.
+[**beads_rust**](https://github.com/Dicklesworthstone/beads_rust) (`br`) is the only supported CLI — it is built on the proven SQLite + JSONL architecture. Verified with `br` 0.7.4; the latest release is 0.7.6.
 
 1. **Install `br`** — follow the instructions at [github.com/Dicklesworthstone/beads_rust](https://github.com/Dicklesworthstone/beads_rust)
 
@@ -138,24 +138,9 @@ Beyond just viewing issues, this app is part of a broader development workflow p
    br --version
    ```
 
-The app **auto-detects** which CLI is installed. You can switch between `br` and `bd` at any time via **Settings** (`Cmd/Ctrl+,`).
+The app runs `br` (resolved from `PATH`, or a custom binary path in its config file).
 
-### Also supported: `bd` 0.49.x (Go)
-
-[**bd**](https://github.com/steveyegge/beads) (`bd`) version 0.49.x remains fully supported as a fallback. This is the last stable Go version with embedded Dolt and native file watcher support.
-
-> **Do not** upgrade to bd 0.50–0.56+ which switched to server mode, introducing regressions for standalone desktop use. See [beads#2050](https://github.com/steveyegge/beads/issues/2050) for details. If `bd` with Dolt regains comparable reactivity and performance in future versions, we'll reconsider.
-
-```bash
-# Install bd (check the repo for the latest method)
-curl -fsSL https://raw.githubusercontent.com/steveyegge/beads/main/scripts/install.sh | bash
-```
-
-### Using Both Side by Side
-
-`br` and `bd` can be installed simultaneously. The app lets you switch between them at any time via Settings — useful for comparing behavior or transitioning gradually.
-
-If you use an AI coding assistant (Claude Code, Cursor, etc.) to pilot your issues, configure its skills/commands to use the CLI of your choice (`br` or `bd`). The app will reflect changes from either one in real time.
+If you use an AI coding assistant (Claude Code, Cursor, etc.) to pilot your issues, configure its skills/commands to use `br`. The app reflects its changes in real time.
 
 ## Installation
 
@@ -219,7 +204,7 @@ This application is built with modern web technologies, packaged as a native des
 
 ## Related Projects
 
-- [bd Beads](https://github.com/steveyegge/beads) - The AI-native issue tracker by Steve Yegge
+- [beads_rust](https://github.com/Dicklesworthstone/beads_rust) - The `br` CLI (SQLite + JSONL) this app drives
 - [Beads VS Code Extension](https://marketplace.visualstudio.com/items?itemName=planet57.vscode-beads) - The Planet57 VS Code extension
 - [Community Tools](https://github.com/steveyegge/beads/blob/main/docs/COMMUNITY_TOOLS.md) - Other Beads community projects
 

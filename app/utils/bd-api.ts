@@ -249,7 +249,7 @@ async function fetchProbeMetrics(): Promise<ProbeMetricsResponse> {
   return metrics
 }
 
-// Check if error is a schema migration error (bd 0.49.4 bug)
+// Check if error is a schema migration error
 export function isSchemaMigrationError(error: unknown): boolean {
   if (error instanceof Error) {
     return error.message.includes('SCHEMA_MIGRATION_ERROR') || error.message.includes('no such column: spec_id')
@@ -273,41 +273,6 @@ export async function bdRepairDatabase(path?: string): Promise<RepairResult> {
     throw new Error('Database repair is only available in the desktop app')
   }
   return invoke<RepairResult>('bd_repair_database', { cwd: path })
-}
-
-// Dolt migration result
-export interface MigrateResult {
-  success: boolean
-  message: string
-}
-
-// Migration status check result
-export interface MigrationStatus {
-  needsMigration: boolean
-  reason: string
-}
-
-// Check if error indicates Dolt migration is needed (bd >= 0.50 with SQLite project)
-export function isDoltMigrationError(error: unknown): boolean {
-  const msg = error instanceof Error ? error.message : String(error)
-  return msg.includes('Dolt backend configured but database not found')
-}
-
-// Proactively check if a project needs Dolt migration
-// (detects partial migrations and SQLite projects with bd >= 0.50)
-export async function bdCheckNeedsMigration(path?: string): Promise<MigrationStatus> {
-  if (!isTauri()) {
-    return { needsMigration: false, reason: 'web mode' }
-  }
-  return invoke<MigrationStatus>('bd_check_needs_migration', { cwd: path })
-}
-
-// Migrate a project from SQLite to Dolt backend
-export async function bdMigrateToDolt(path?: string): Promise<MigrateResult> {
-  if (!isTauri()) {
-    throw new Error('Database migration is only available in the desktop app')
-  }
-  return invoke<MigrateResult>('bd_migrate_to_dolt', { cwd: path })
 }
 
 // Attachment refs migration v3 (filesystem-only)
@@ -334,14 +299,6 @@ export async function bdMigrateRefs(path?: string): Promise<MigrateRefsResult> {
     throw new Error('Attachment migration is only available in the desktop app')
   }
   return invoke<MigrateRefsResult>('migrate_attachment_refs', { cwd: path })
-}
-
-// Remove stale Dolt lock files that block database access (left by crashed processes)
-export async function bdCleanupStaleLocks(path?: string): Promise<{ removed: string[] }> {
-  if (!isTauri()) {
-    return { removed: [] }
-  }
-  return invoke<{ removed: string[] }>('bd_cleanup_stale_locks', { cwd: path })
 }
 
 // ============================================================================
@@ -707,39 +664,6 @@ export async function checkBdCliUpdate(): Promise<BdCliUpdateInfo> {
 }
 
 // ============================================================================
-// bd Compatibility Check API
-// ============================================================================
-
-export interface BdCompatibilityInfo {
-  version: string
-  /** "bd", "br", or "unknown" */
-  clientType: string
-  versionTuple: number[] | null
-  supportsDaemonFlag: boolean
-  usesJsonlFiles: boolean
-  usesDoltBackend: boolean
-  /** bd >= 0.55: --all flag works correctly for bd list */
-  supportsListAllFlag: boolean
-  warnings: string[]
-}
-
-export async function checkBdCompatibility(): Promise<BdCompatibilityInfo> {
-  if (isTauri()) {
-    return invoke<BdCompatibilityInfo>('check_bd_compatibility')
-  }
-  return {
-    version: 'web mode',
-    clientType: 'unknown',
-    versionTuple: null,
-    supportsDaemonFlag: false,
-    usesJsonlFiles: false,
-    usesDoltBackend: false,
-    supportsListAllFlag: false,
-    warnings: [],
-  }
-}
-
-// ============================================================================
 // CLI Binary Configuration API
 // ============================================================================
 
@@ -747,7 +671,7 @@ export async function getCliBinaryPath(): Promise<string> {
   if (isTauri()) {
     return invoke<string>('get_cli_binary_path')
   }
-  return 'bd'
+  return 'br'
 }
 
 export async function setCliBinaryPath(path: string): Promise<string> {
@@ -768,14 +692,12 @@ export interface DirectoryEntry {
   isDirectory: boolean
   hasBeads: boolean
   hasGrace: boolean
-  usesDolt: boolean
 }
 
 export interface FsListResult {
   currentPath: string
   hasBeads: boolean
   hasGrace: boolean
-  usesDolt: boolean
   entries: DirectoryEntry[]
 }
 

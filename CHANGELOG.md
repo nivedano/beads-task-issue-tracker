@@ -2,7 +2,14 @@
 
 ## [Unreleased]
 
-> Requires **bd 0.49.x**. Recommended CLI: **br** 0.7.x (verified with 0.7.4).
+> Requires **br** 0.7.x (verified with 0.7.4). `br` is the only supported CLI.
+
+### Changed
+- Removed original beads (bd) CLI support; br is the only client. The `br`/`bd` client choice is
+  gone (Settings no longer offers a selector), bd-only compatibility branches, daemon flags,
+  `--hard`/`--all` fallbacks and bd version checks are deleted, and the Dolt backend machinery
+  (migration flow, Dolt badges, recursive `.beads` watching) is removed. The internal `bd_*`
+  command names are unchanged as the Tauri API; they now target `br` exclusively.
 
 ### Features
 - **GRACE explorer (desktop, read-only)**: beside the issue explorer, a project with a `.grace5/`

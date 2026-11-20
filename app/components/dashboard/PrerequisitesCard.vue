@@ -3,16 +3,16 @@ import LinkifiedText from '~/components/ui/linkified-text/LinkifiedText.vue'
 
 const prerequisitesContent = `**Beads** is an AI-native issue tracker that lives directly in your codebase. Issues are stored as files in a \`.beads\` folder within your repository.
 
+This app works with [\`br\`](https://github.com/Dicklesworthstone/beads_rust) (beads_rust), the SQLite + JSONL Beads CLI.
+
 ### Prerequisites
 
-#### 1. Install the Beads CLI
+#### 1. Install the Beads Rust CLI
+
+Follow the install instructions at [github.com/Dicklesworthstone/beads_rust](https://github.com/Dicklesworthstone/beads_rust), then verify:
 
 \`\`\`bash
-# Using npm
-npm install -g @beads/cli
-
-# Or using Homebrew (macOS)
-brew install beads
+br --version
 \`\`\`
 
 #### 2. Initialize Beads in your project
@@ -21,7 +21,7 @@ Navigate to your project folder and run:
 
 \`\`\`bash
 cd /path/to/your/project
-bd init
+br init
 \`\`\`
 
 This creates a \`.beads\` folder in your repository.
@@ -29,13 +29,13 @@ This creates a \`.beads\` folder in your repository.
 #### 3. Create your first issue
 
 \`\`\`bash
-bd create "My first issue" --type task --priority p2
+br create "My first issue" --type task --priority p2
 \`\`\`
 
 ### Learn more
 
-- [Beads Documentation](https://beads.dev)
-- [GitHub Repository](https://github.com/steveyegge/beads)
+- [Beads Rust Documentation](https://github.com/Dicklesworthstone/beads_rust)
+- [Beads Rust Releases](https://github.com/Dicklesworthstone/beads_rust/releases)
 `
 </script>
 

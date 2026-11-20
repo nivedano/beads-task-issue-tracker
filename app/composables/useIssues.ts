@@ -110,7 +110,6 @@ export function useIssues() {
   const { filters } = useFilters()
   const { beadsPath } = useBeadsPath()
   const { checkError: checkRepairError } = useRepairDatabase()
-  const { checkError: checkMigrateError } = useMigrateToDolt()
   const { exclusions } = useExclusionFilters()
   const { pinnedIssueIds } = usePinnedIssues()
 
@@ -124,7 +123,7 @@ export function useIssues() {
     error.value = null
 
     try {
-      // Single call with --all to get all issues (bd >= 0.55 fixed the --all flag)
+      // Single call with --all to get all issues
       const path = getPath()
 
       const allIssues = await bdList({ path, includeAll: true })
@@ -133,38 +132,16 @@ export function useIssues() {
       // Build parent-child relationships from the data we already have (no bdShow needed)
       const issueMap = new Map(newIssues.map(i => [i.id, i]))
 
-      // 1. Fill in parent details
-      //    - Use explicit parent.id from bd list if available (bd < 0.50)
-      //    - Derive from dot notation in ID for bd >= 0.50 (e.g., "abc.1" → parent "abc")
+      // 1. Enrich explicit parents with full details from loaded data
       for (const issue of newIssues) {
-        // Derive parent from ID pattern if not already set
-        if (!issue.parent?.id) {
-          const lastDot = issue.id.lastIndexOf('.')
-          if (lastDot !== -1) {
-            const suffix = issue.id.slice(lastDot + 1)
-            if (/^\d+$/.test(suffix)) {
-              const derivedParentId = issue.id.slice(0, lastDot)
-              const parentIssue = issueMap.get(derivedParentId)
-              if (parentIssue) {
-                issue.parent = {
-                  id: parentIssue.id,
-                  title: parentIssue.title,
-                  status: parentIssue.status,
-                  priority: parentIssue.priority,
-                }
-              }
-            }
-          }
-        } else {
-          // Enrich explicit parent with full details from loaded data
-          const parentIssue = issueMap.get(issue.parent.id)
-          if (parentIssue) {
-            issue.parent = {
-              id: parentIssue.id,
-              title: parentIssue.title,
-              status: parentIssue.status,
-              priority: parentIssue.priority,
-            }
+        if (!issue.parent?.id) continue
+        const parentIssue = issueMap.get(issue.parent.id)
+        if (parentIssue) {
+          issue.parent = {
+            id: parentIssue.id,
+            title: parentIssue.title,
+            status: parentIssue.status,
+            priority: parentIssue.priority,
           }
         }
       }
@@ -230,11 +207,8 @@ export function useIssues() {
       lastKnownUpdated.value = maxUpdated || null
 
     } catch (e) {
-      // Check for Dolt migration error first (more specific)
-      if (checkMigrateError(e, beadsPath.value)) {
-        error.value = 'Database needs migration to Dolt backend.'
       // Check if this is a schema migration error that needs repair
-      } else if (checkRepairError(e)) {
+      if (checkRepairError(e)) {
         error.value = 'Database needs repair due to a schema migration issue.'
       } else {
         error.value = e instanceof Error ? e.message : 'Failed to fetch issues'
@@ -263,25 +237,12 @@ export function useIssues() {
       // Build parent-child relationships from the data we already have (no bdShow needed)
       const issueMap = new Map(newIssues.map(i => [i.id, i]))
 
-      // Derive parent from dot notation if not set (bd >= 0.50)
+      // Enrich explicit parents with full details from loaded data
       for (const issue of newIssues) {
-        if (!issue.parent?.id) {
-          const lastDot = issue.id.lastIndexOf('.')
-          if (lastDot !== -1) {
-            const suffix = issue.id.slice(lastDot + 1)
-            if (/^\d+$/.test(suffix)) {
-              const derivedParentId = issue.id.slice(0, lastDot)
-              const parentIssue = issueMap.get(derivedParentId)
-              if (parentIssue) {
-                issue.parent = { id: parentIssue.id, title: parentIssue.title, status: parentIssue.status, priority: parentIssue.priority }
-              }
-            }
-          }
-        } else {
-          const parentIssue = issueMap.get(issue.parent.id)
-          if (parentIssue) {
-            issue.parent = { id: parentIssue.id, title: parentIssue.title, status: parentIssue.status, priority: parentIssue.priority }
-          }
+        if (!issue.parent?.id) continue
+        const parentIssue = issueMap.get(issue.parent.id)
+        if (parentIssue) {
+          issue.parent = { id: parentIssue.id, title: parentIssue.title, status: parentIssue.status, priority: parentIssue.priority }
         }
       }
 
@@ -372,9 +333,7 @@ export function useIssues() {
 
       return data.readyIssues || []
     } catch (e) {
-      if (checkMigrateError(e, beadsPath.value)) {
-        error.value = 'Database needs migration to Dolt backend.'
-      } else if (checkRepairError(e)) {
+      if (checkRepairError(e)) {
         error.value = 'Database needs repair due to a schema migration issue.'
       } else {
         error.value = e instanceof Error ? e.message : 'Failed to fetch poll data'
@@ -462,20 +421,16 @@ export function useIssues() {
         return null
       }
 
-      // Enrich parent/children from loaded issues list (bd >= 0.50 doesn't return these)
-      if (!data.parent?.id) {
-        const lastDot = data.id.lastIndexOf('.')
-        if (lastDot !== -1 && /^\d+$/.test(data.id.slice(lastDot + 1))) {
-          const parentIssue = issues.value.find(i => i.id === data.id.slice(0, lastDot))
-          if (parentIssue) {
-            data.parent = { id: parentIssue.id, title: parentIssue.title, status: parentIssue.status, priority: parentIssue.priority }
-          }
+      // Enrich parent/children from loaded issues list
+      if (data.parent?.id) {
+        const parentIssue = issues.value.find(i => i.id === data.parent!.id)
+        if (parentIssue) {
+          data.parent = { id: parentIssue.id, title: parentIssue.title, status: parentIssue.status, priority: parentIssue.priority }
         }
       }
       if (!data.children?.length) {
-        const prefix = data.id + '.'
         const children = issues.value
-          .filter(i => i.id.startsWith(prefix) && !i.id.slice(prefix.length).includes('.'))
+          .filter(i => i.parent?.id === data.id)
           .map(i => ({ id: i.id, title: i.title, status: i.status, priority: i.priority }))
         if (children.length) {
           data.children = children

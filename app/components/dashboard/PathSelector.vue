@@ -27,7 +27,7 @@ const { issues } = useIssues()
 const projectIssueCounts = ref<Record<string, { active: number; total: number }>>({})
 const scannedProjectPaths = new Set<string>()
 // Registry capabilities per project, probed once before any count scan: the
-// scan runs `bd list` (which touches git), so a grace-only or empty folder must
+// scan runs `br list` (which touches git), so a grace-only or empty folder must
 // be skipped entirely instead of being treated as a broken beads project.
 const projectCapabilities = ref<Record<string, { hasBeads: boolean; hasGrace: boolean }>>({})
 
@@ -56,7 +56,7 @@ async function scanProjectIssueCounts(path: string) {
     const caps = await capabilitiesFor(path)
 
     if (!caps.hasBeads) {
-      // Grace-only (or no registry): no bd CLI, no git — the row shows a GRACE/
+      // Grace-only (or no registry): no CLI, no git — the row shows a GRACE/
       // no-registry badge instead of counts.
       delete projectIssueCounts.value[path]
       return

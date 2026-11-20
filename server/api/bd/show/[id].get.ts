@@ -22,8 +22,8 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  // Transform bd CLI response to match Issue type interface
-  // bd show --json returns an array with one element
+  // Transform br CLI response to match Issue type interface
+  // br show --json returns an array with one element
   const rawIssue = Array.isArray(result.data) ? result.data[0] : result.data
   return rawIssue ? transformIssue(rawIssue as Parameters<typeof transformIssue>[0]) : null
 })

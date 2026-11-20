@@ -45,7 +45,6 @@ const entries = ref<DirectoryEntry[]>([])
 const roots = ref<DirectoryEntry[]>([])
 const hasBeads = ref(false)
 const hasGrace = ref(false)
-const usesDolt = ref(false)
 const isLoading = ref(false)
 const error = ref<string | null>(null)
 const crumbBar = ref<HTMLElement | null>(null)
@@ -108,7 +107,6 @@ const loadDirectory = async (path: string) => {
     entries.value = data.entries
     hasBeads.value = data.hasBeads
     hasGrace.value = data.hasGrace
-    usesDolt.value = data.usesDolt
     isEditingPath.value = false
   } catch (e) {
     // Keep the current listing on screen: a mistyped path should not blank the
@@ -390,18 +388,6 @@ const isCurrentProject = computed(() => isProject(currentPath.value))
                 <Badge v-if="hasGrace && isDesktop" variant="outline" class="text-violet-500 border-violet-500/50 shrink-0">
                   GRACE
                 </Badge>
-                <Badge v-if="usesDolt" variant="outline" class="text-[#29E3C1] border-[#29E3C1]/50 shrink-0 px-2 py-1">
-                  <svg style="width: 2rem; height: 0.65rem;" viewBox="0 0 163 56" fill="none">
-                    <path d="M28.87 7.0459V45.8632C28.8654 46.7997 28.498 47.6965 27.8476 48.3591C27.1971 49.0217 26.316 49.3964 25.3957 49.402H10.4953C9.5713 49.402 8.68489 49.0298 8.0299 48.3666C7.3749 47.7035 7.00462 46.8034 7 45.8632V24.7722C7.00462 23.832 7.3749 22.9319 8.0299 22.2688C8.68489 21.6056 9.5713 21.2334 10.4953 21.2334H22.2115" stroke="currentColor" stroke-width="12.6599" stroke-linecap="round" stroke-linejoin="round"/>
-                    <path d="M156.3 49.4019H145.283" stroke="currentColor" stroke-width="12.6599" stroke-linecap="round" stroke-linejoin="round"/>
-                    <path d="M156.026 21.5259H134.174" stroke="currentColor" stroke-width="12.6599" stroke-linecap="round" stroke-linejoin="round"/>
-                    <path d="M145.336 7.0498V49.4024" stroke="currentColor" stroke-width="12.6599" stroke-linecap="round" stroke-linejoin="round"/>
-                    <path d="M72.2752 7.68311H59.049C56.6669 7.68311 54.7358 9.64808 54.7358 12.072V44.8074C54.7358 47.2313 56.6669 49.1963 59.049 49.1963H72.2752C74.6573 49.1963 76.5884 47.2313 76.5884 44.8074V12.072C76.5884 9.64808 74.6573 7.68311 72.2752 7.68311Z" stroke="currentColor" stroke-width="12.6599" stroke-linecap="round" stroke-linejoin="round"/>
-                    <path d="M119.586 49.4019H99.418" stroke="currentColor" stroke-width="12.6599" stroke-linecap="round" stroke-linejoin="round"/>
-                    <path d="M110.344 7.0498V49.4024" stroke="currentColor" stroke-width="12.6599" stroke-linecap="round" stroke-linejoin="round"/>
-                    <path d="M109.884 7H98.7939" stroke="currentColor" stroke-width="12.6599" stroke-linecap="round" stroke-linejoin="round"/>
-                  </svg>
-                </Badge>
                 <Badge v-if="isCurrentProject" variant="outline" class="text-primary border-primary/50">
                   <svg class="w-3 h-3 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <polyline points="20 6 9 17 4 12" />
@@ -448,18 +434,6 @@ const isCurrentProject = computed(() => isProject(currentPath.value))
                   </Badge>
                   <Badge v-if="entry.hasGrace && isDesktop" variant="outline" class="text-violet-500 border-violet-500/50 text-xs">
                     grace
-                  </Badge>
-                  <Badge v-if="entry.usesDolt" variant="outline" class="text-[#29E3C1] border-[#29E3C1]/50 text-xs px-1.5 py-0.5">
-                    <svg style="width: 1.75rem; height: 0.55rem;" viewBox="0 0 163 56" fill="none">
-                      <path d="M28.87 7.0459V45.8632C28.8654 46.7997 28.498 47.6965 27.8476 48.3591C27.1971 49.0217 26.316 49.3964 25.3957 49.402H10.4953C9.5713 49.402 8.68489 49.0298 8.0299 48.3666C7.3749 47.7035 7.00462 46.8034 7 45.8632V24.7722C7.00462 23.832 7.3749 22.9319 8.0299 22.2688C8.68489 21.6056 9.5713 21.2334 10.4953 21.2334H22.2115" stroke="currentColor" stroke-width="12.6599" stroke-linecap="round" stroke-linejoin="round"/>
-                      <path d="M156.3 49.4019H145.283" stroke="currentColor" stroke-width="12.6599" stroke-linecap="round" stroke-linejoin="round"/>
-                      <path d="M156.026 21.5259H134.174" stroke="currentColor" stroke-width="12.6599" stroke-linecap="round" stroke-linejoin="round"/>
-                      <path d="M145.336 7.0498V49.4024" stroke="currentColor" stroke-width="12.6599" stroke-linecap="round" stroke-linejoin="round"/>
-                      <path d="M72.2752 7.68311H59.049C56.6669 7.68311 54.7358 9.64808 54.7358 12.072V44.8074C54.7358 47.2313 56.6669 49.1963 59.049 49.1963H72.2752C74.6573 49.1963 76.5884 47.2313 76.5884 44.8074V12.072C76.5884 9.64808 74.6573 7.68311 72.2752 7.68311Z" stroke="currentColor" stroke-width="12.6599" stroke-linecap="round" stroke-linejoin="round"/>
-                      <path d="M119.586 49.4019H99.418" stroke="currentColor" stroke-width="12.6599" stroke-linecap="round" stroke-linejoin="round"/>
-                      <path d="M110.344 7.0498V49.4024" stroke="currentColor" stroke-width="12.6599" stroke-linecap="round" stroke-linejoin="round"/>
-                      <path d="M109.884 7H98.7939" stroke="currentColor" stroke-width="12.6599" stroke-linecap="round" stroke-linejoin="round"/>
-                    </svg>
                   </Badge>
                   <svg class="w-4 h-4 text-muted-foreground shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <polyline points="9 18 15 12 9 6" />

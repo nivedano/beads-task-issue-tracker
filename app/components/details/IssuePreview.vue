@@ -216,10 +216,10 @@ const handleRemoveDependency = (id: string, section: 'blockedBy' | 'blocks') => 
 
 const handleRemoveRelation = (targetId: string, direction: string) => {
   if (direction === 'dependent') {
-    // targetId depends on current issue → bd dep remove <targetId> <currentIssue>
+    // targetId depends on current issue → br dep remove <targetId> <currentIssue>
     emit('remove-relation', targetId, props.issue.id)
   } else {
-    // Current issue depends on targetId → bd dep remove <currentIssue> <targetId>
+    // Current issue depends on targetId → br dep remove <currentIssue> <targetId>
     emit('remove-relation', props.issue.id, targetId)
   }
 }

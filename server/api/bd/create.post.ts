@@ -14,7 +14,7 @@ export default defineEventHandler(async (event) => {
 
   const cwd = query.path ? String(query.path) : undefined
 
-  // Convert priority from "p3" format to "3" for bd CLI
+  // Convert priority from "p3" format to "3" for br CLI
   const priority = body.priority ? priorityToNumber(body.priority) : undefined
 
   const result = await bdCreate(
@@ -41,6 +41,6 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  // Transform bd CLI response to match Issue type interface
+  // Transform br CLI response to match Issue type interface
   return result.data ? transformIssue(result.data as Parameters<typeof transformIssue>[0]) : null
 })

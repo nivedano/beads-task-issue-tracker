@@ -24,30 +24,18 @@ const SYNC_COOLDOWN_SECS: u64 = 10;
 static LAST_KNOWN_MTIME: LazyLock<Mutex<HashMap<String, std::time::SystemTime>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
-// Configurable CLI binary name (default: "bd")
-static CLI_BINARY: LazyLock<Mutex<String>> = LazyLock::new(|| Mutex::new("bd".to_string()));
+// Configurable CLI binary name (default: "br")
+static CLI_BINARY: LazyLock<Mutex<String>> = LazyLock::new(|| Mutex::new("br".to_string()));
 
 // Global child process handle for beads-probe
 static PROBE_CHILD: LazyLock<Mutex<Option<std::process::Child>>> =
     LazyLock::new(|| Mutex::new(None));
 
-// Per-project mutex to prevent concurrent bd/Dolt access.
-// bd 0.55 uses embedded Dolt which crashes (SIGSEGV) when two bd processes
-// access the same database simultaneously. This serializes all bd calls per project.
+// Per-project mutex to serialize CLI invocations.
+// The CLI store is a single-writer SQLite database; concurrent invocations against
+// the same project can fail or corrupt it. This serializes all CLI calls per project.
 static BD_PROJECT_LOCKS: LazyLock<Mutex<HashMap<String, std::sync::Arc<Mutex<()>>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
-
-// Cached CLI client info — detected once on first use
-// Stores: (client_type, major, minor, patch)
-#[derive(Debug, Clone, Copy, PartialEq)]
-enum CliClient {
-    Bd,  // Original Go-based beads CLI
-    Br,  // beads_rust — frozen at classic SQLite+JSONL architecture, no daemon
-    Unknown,
-}
-
-static CLI_CLIENT_INFO: LazyLock<Mutex<Option<(CliClient, u32, u32, u32)>>> =
-    LazyLock::new(|| Mutex::new(None));
 
 // Conditional logging macros
 macro_rules! log_info {
@@ -198,10 +186,7 @@ fn is_watched_path(path: &std::path::Path) -> bool {
     }
 
     // Ignore high-churn internal files that do not carry registry data.
-    !(path.contains("/.beads/.dolt/stats/")
-        || path.contains("/.beads/.dolt/tmp/")
-        || path.contains("/.beads/.dolt/.tmp/")
-        || path.ends_with(".lock")
+    !(path.ends_with(".lock")
         || path.ends_with(".tmp")
         || path.ends_with(".swp")
         || path.ends_with('~'))
@@ -295,7 +280,7 @@ struct BeadsChangedPayload {
 // Types
 // ============================================================================
 
-/// Dependency relationship as returned by bd CLI
+/// Dependency relationship as returned by br CLI
 /// Format: {"issue_id": "...", "depends_on_id": "...", "type": "blocks", "created_at": "...", "created_by": "..."}
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct BdRawDependency {
@@ -309,7 +294,7 @@ pub struct BdRawDependency {
 }
 
 /// Dependent info (for parent-child relationships with full issue info)
-/// Some bd versions may return this format instead
+/// Some CLI versions may return this format instead
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct BdRawDependent {
     pub id: Option<String>,
@@ -466,8 +451,6 @@ pub struct DirectoryEntry {
     pub has_beads: bool,
     #[serde(rename = "hasGrace")]
     pub has_grace: bool,
-    #[serde(rename = "usesDolt")]
-    pub uses_dolt: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -486,8 +469,6 @@ pub struct FsListResult {
     pub has_beads: bool,
     #[serde(rename = "hasGrace")]
     pub has_grace: bool,
-    #[serde(rename = "usesDolt")]
-    pub uses_dolt: bool,
     pub entries: Vec<DirectoryEntry>,
 }
 
@@ -724,18 +705,18 @@ fn transform_issue(raw: BdRawIssue) -> Issue {
             }
         }).collect(),
         blocked_by: {
-            // Try raw.blocked_by first (if bd ever populates it directly)
+            // Try raw.blocked_by first (if the CLI ever populates it directly)
             let mut bb = raw.blocked_by.unwrap_or_default();
-            // Extract from dependencies array (bd show: objects with dependency_type "blocks" = blockers)
+            // Extract from dependencies array (show: objects with dependency_type "blocks" = blockers)
             if let Some(ref deps) = raw.dependencies {
-                // bd show format: [{id, dependency_type: "blocks"}] — these block the current issue
+                // show format: [{id, dependency_type: "blocks"}] — these block the current issue
                 for dep in deps {
                     if let (Some(ref dep_type), Some(ref id)) = (&dep.dependency_type, &dep.id) {
                         if dep_type == "blocks" && !bb.contains(id) {
                             bb.push(id.clone());
                         }
                     }
-                    // bd list format: [{issue_id, depends_on_id, type: "blocks"}]
+                    // list format: [{issue_id, depends_on_id, type: "blocks"}]
                     if let (Some(ref dep_type), Some(ref depends_on_id), Some(ref _issue_id)) = (&dep.dependency_type, &dep.depends_on_id, &dep.issue_id) {
                         if dep_type == "blocks" && !bb.contains(depends_on_id) {
                             bb.push(depends_on_id.clone());
@@ -747,7 +728,7 @@ fn transform_issue(raw: BdRawIssue) -> Issue {
         },
         blocks: {
             let mut bl = raw.blocks.unwrap_or_default();
-            // Extract from dependents array (bd show: objects with dependency_type "blocks" = issues blocked by current)
+            // Extract from dependents array (show: objects with dependency_type "blocks" = issues blocked by current)
             // Filter to only "blocks" type — exclude "parent-child" which are children, not dependencies
             if let Some(ref dependents) = raw.dependents {
                 for dep in dependents {
@@ -907,56 +888,10 @@ struct AppConfig {
 }
 
 fn default_cli_binary() -> String {
-    // Auto-detect without starting a child process. This runs from Tauri's setup
-    // hook, so waiting for `--version` here prevents the newly-created window
-    // from becoming responsive (and can take several seconds on a cold Windows
-    // process launch).
-    for bin in &["br", "bd"] {
-        if binary_exists_on_path(bin) {
-            return bin.to_string();
-        }
-    }
-    // Neither found — default to br (will fail later with clear error)
+    // br is the only supported client. Resolving it here happens from Tauri's
+    // setup hook, so never spawn `--version` to validate it: that would block
+    // the window from becoming responsive.
     "br".to_string()
-}
-
-/// Check whether a command can be resolved without launching it.
-///
-/// Use the same extended PATH as normal CLI commands so desktop launches can
-/// find user-local installations even when the graphical environment provides
-/// a minimal PATH.
-fn binary_exists_on_path(binary: &str) -> bool {
-    let binary_path = std::path::Path::new(binary);
-    if binary_path.components().count() > 1 {
-        return binary_path.is_file();
-    }
-
-    #[cfg(target_os = "windows")]
-    let candidate_names: Vec<String> = {
-        if binary_path.extension().is_some() {
-            vec![binary.to_string()]
-        } else {
-            let path_ext =
-                env::var("PATHEXT").unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".to_string());
-            let mut names = vec![binary.to_string()];
-            names.extend(
-                path_ext
-                    .split(';')
-                    .filter(|ext| !ext.is_empty())
-                    .map(|ext| format!("{}{}", binary, ext.to_ascii_lowercase())),
-            );
-            names
-        }
-    };
-
-    #[cfg(not(target_os = "windows"))]
-    let candidate_names = vec![binary.to_string()];
-
-    env::split_paths(&get_extended_path()).any(|directory| {
-        candidate_names
-            .iter()
-            .any(|name| directory.join(name).is_file())
-    })
 }
 
 impl Default for AppConfig {
@@ -1006,25 +941,11 @@ fn get_cli_binary() -> String {
 }
 
 // ============================================================================
-// CLI Client Detection (bd vs br)
+// CLI Version Parsing
 // ============================================================================
 
-/// Detect the client type from the version string.
-/// - "bd version 0.49.6 (Homebrew)" → Bd
-/// - "br 0.1.13 (rustc 1.85.0-nightly)" → Br
-fn detect_cli_client(version_str: &str) -> CliClient {
-    let lower = version_str.to_lowercase();
-    if lower.starts_with("br ") || lower.contains("beads_rust") || lower.contains("beads-rust") {
-        CliClient::Br
-    } else if lower.starts_with("bd ") || lower.contains("bd version") {
-        CliClient::Bd
-    } else {
-        CliClient::Unknown
-    }
-}
-
 /// Parse a version string into (major, minor, patch).
-/// Works for both "bd version 0.49.6 (Homebrew)" and "br 0.1.13 (rustc ...)".
+/// Works for `br 0.1.13 (rustc 1.85.0-nightly)`.
 fn parse_bd_version(version_str: &str) -> Option<(u32, u32, u32)> {
     // Look for a semver-like pattern: digits.digits.digits
     let re_like = version_str
@@ -1045,160 +966,6 @@ fn parse_bd_version(version_str: &str) -> Option<(u32, u32, u32)> {
     }
 }
 
-/// Detect and cache the CLI client type and version. Runs `binary --version` once.
-fn get_cli_client_info() -> Option<(CliClient, u32, u32, u32)> {
-    let mut cached = CLI_CLIENT_INFO.lock().unwrap();
-    if let Some(info) = *cached {
-        return Some(info);
-    }
-
-    let binary = get_cli_binary();
-    // Run from temp dir to avoid bd auto-migrating projects in cwd
-    let output = new_command(&binary)
-        .arg("--version")
-        .current_dir(std::env::temp_dir())
-        .env("PATH", get_extended_path())
-        .output()
-        .ok()?;
-
-    if !output.status.success() {
-        log_warn!("[cli_detect] Failed to get version from {}", binary);
-        return None;
-    }
-
-    let version_str = String::from_utf8_lossy(&output.stdout);
-    let trimmed = version_str.trim();
-    let client = detect_cli_client(trimmed);
-    let tuple = parse_bd_version(trimmed);
-
-    if let Some((major, minor, patch)) = tuple {
-        let info = (client, major, minor, patch);
-        let client_name = match client {
-            CliClient::Bd => "bd",
-            CliClient::Br => "br",
-            CliClient::Unknown => "unknown",
-        };
-        log_info!("[cli_detect] Detected {} client v{}.{}.{}", client_name, major, minor, patch);
-        *cached = Some(info);
-        Some(info)
-    } else {
-        log_warn!("[cli_detect] Could not parse version from: {}", trimmed);
-        None
-    }
-}
-
-/// Returns true if the CLI supports the --no-daemon flag.
-/// - br: NEVER (no daemon concept)
-/// - bd < 0.50.0: YES
-/// - bd >= 0.50.0: NO (daemon removed)
-/// - unknown: NO (safe default)
-fn supports_daemon_flag() -> bool {
-    match get_cli_client_info() {
-        Some((CliClient::Br, _, _, _)) => false, // br has no daemon
-        Some((CliClient::Bd, major, minor, _)) => major == 0 && minor < 50,
-        Some((CliClient::Unknown, _, _, _)) => false,
-        None => false,
-    }
-}
-
-/// Returns true if the CLI uses issues.jsonl files.
-/// - br: ALWAYS (frozen on SQLite+JSONL architecture)
-/// - bd < 0.50.0: YES
-/// - bd >= 0.50.0: NO (Dolt only)
-/// - unknown: NO (safe default)
-fn uses_jsonl_files() -> bool {
-    match get_cli_client_info() {
-        Some((CliClient::Br, _, _, _)) => true, // br always uses JSONL
-        Some((CliClient::Bd, major, minor, _)) => major == 0 && minor < 50,
-        Some((CliClient::Unknown, _, _, _)) => false,
-        None => false,
-    }
-}
-
-/// Returns true if `bd list --all` works correctly.
-/// The --all flag was buggy before bd 0.55.0 (returned incorrect results).
-/// - br: NO
-/// - bd >= 0.55.0: YES
-/// - bd < 0.55.0: NO (use 2 separate calls instead)
-/// - unknown: NO (safe default)
-fn supports_list_all_flag() -> bool {
-    match get_cli_client_info() {
-        Some((CliClient::Bd, major, minor, _)) => major > 0 || minor >= 55,
-        Some((CliClient::Br, _, _, _)) => true, // br always supports --all
-        _ => false,
-    }
-}
-
-/// Returns true if `bd delete --hard` is supported.
-/// The --hard flag was removed in bd 0.50.0.
-/// - br: NO
-/// - bd < 0.50.0: YES
-/// - bd >= 0.50.0: NO (only --force needed)
-/// - unknown: NO (safe default)
-fn supports_delete_hard_flag() -> bool {
-    match get_cli_client_info() {
-        Some((CliClient::Bd, major, minor, _)) => major == 0 && minor < 50,
-        _ => false,
-    }
-}
-
-/// Returns true if the CLI uses the Dolt backend (inverse of uses_jsonl_files).
-/// - br: NEVER (frozen on SQLite+JSONL architecture)
-/// - bd >= 0.50.0: YES (Dolt only)
-/// - bd < 0.50.0: NO (SQLite+JSONL)
-/// - unknown: NO (safe default)
-fn uses_dolt_backend() -> bool {
-    match get_cli_client_info() {
-        Some((CliClient::Br, _, _, _)) => false, // br never uses Dolt
-        Some((CliClient::Bd, major, minor, _)) => major > 0 || minor >= 50,
-        Some((CliClient::Unknown, _, _, _)) => false,
-        None => false,
-    }
-}
-
-/// Returns true if a specific project uses the Dolt backend.
-/// Checks for the presence of `.beads/.dolt/` directory in the project.
-/// - br: NEVER (frozen on SQLite+JSONL architecture)
-/// - bd < 0.50.0: NEVER (CLI doesn't support Dolt)
-/// - bd >= 0.50.0: checks if `.dolt/` directory exists inside the beads dir
-fn project_uses_dolt(beads_dir: &std::path::Path) -> bool {
-    match get_cli_client_info() {
-        Some((CliClient::Br, _, _, _)) => false,
-        Some((CliClient::Bd, major, minor, _)) if major == 0 && minor < 50 => false,
-        _ => {
-            // Check .beads/.dolt (legacy) or .beads/dolt/<name>/.dolt (bd 0.52+)
-            if beads_dir.join(".dolt").is_dir() {
-                return true;
-            }
-            // Check metadata.json for backend: "dolt"
-            let metadata_path = beads_dir.join("metadata.json");
-            if let Ok(content) = std::fs::read_to_string(&metadata_path) {
-                if content.contains("\"backend\":\"dolt\"") || content.contains("\"backend\": \"dolt\"") {
-                    // Verify dolt database actually exists
-                    let dolt_dir = beads_dir.join("dolt");
-                    if dolt_dir.is_dir() {
-                        // Check if any subdirectory has .dolt
-                        if let Ok(entries) = std::fs::read_dir(&dolt_dir) {
-                            for entry in entries.flatten() {
-                                if entry.path().join(".dolt").is_dir() {
-                                    return true;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            false
-        }
-    }
-}
-
-/// Reset the cached client info (called when CLI binary path changes).
-fn reset_bd_version_cache() {
-    let mut cached = CLI_CLIENT_INFO.lock().unwrap();
-    *cached = None;
-}
-
 fn execute_bd(command: &str, args: &[String], cwd: Option<&str>) -> Result<String, String> {
     let working_dir = cwd
         .map(String::from)
@@ -1214,15 +981,12 @@ fn execute_bd(command: &str, args: &[String], cwd: Option<&str>) -> Result<Strin
     for arg in args {
         full_args.push(arg);
     }
-    if supports_daemon_flag() {
-        full_args.push("--no-daemon");
-    }
     full_args.push("--json");
 
     let binary = get_cli_binary();
     log_info!("[bd] {} {} | cwd: {}", binary, full_args.join(" "), working_dir);
 
-    // Acquire per-project lock to prevent concurrent Dolt access (causes SIGSEGV).
+    // Acquire the per-project lock: the CLI store is single-writer.
     let project_lock = {
         let mut locks = BD_PROJECT_LOCKS.lock().unwrap();
         locks.entry(working_dir.clone())
@@ -1246,7 +1010,7 @@ fn execute_bd(command: &str, args: &[String], cwd: Option<&str>) -> Result<Strin
         let stderr = String::from_utf8_lossy(&output.stderr);
         log_error!("[bd] Command failed | status: {} | stderr: {}", output.status, stderr);
 
-        // Detect schema migration failure (bd 0.49.4 migration bug)
+        // Detect schema incompatibility so the frontend can offer a repair.
         if stderr.contains("no such column: spec_id") {
             log_error!("[bd] Schema migration failure detected - database needs repair");
             return Err("SCHEMA_MIGRATION_ERROR: Database schema is incompatible. Please use the repair function to fix this issue.".to_string());
@@ -1255,7 +1019,7 @@ fn execute_bd(command: &str, args: &[String], cwd: Option<&str>) -> Result<Strin
         if !stderr.is_empty() {
             return Err(stderr.to_string());
         }
-        return Err(format!("bd command failed with status: {}", output.status));
+        return Err(format!("CLI command failed with status: {}", output.status));
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
@@ -1456,14 +1220,8 @@ fn sync_bd_database(cwd: Option<&str>) {
                 .unwrap_or_else(|_| ".".to_string())
         });
 
-    // Dolt backend handles its own sync via git — skip bd sync
-    let beads_dir = std::path::Path::new(&working_dir).join(".beads");
-    if project_uses_dolt(&beads_dir) {
-        log_info!("[sync] Skipping — Dolt backend handles sync via git");
-        return;
-    }
-
     // Check cooldown — skip if synced recently
+    let beads_dir = std::path::Path::new(&working_dir).join(".beads");
     {
         let last = LAST_SYNC_TIME.lock().unwrap();
         if let Some(t) = *last {
@@ -1479,14 +1237,10 @@ fn sync_bd_database(cwd: Option<&str>) {
     // Auto-migrate refs v3 before sync if needed (prevents UNIQUE constraint errors)
     ensure_refs_migrated_v3(&beads_dir, &working_dir);
 
-    // Run bd sync (bidirectional - exports local changes AND imports remote changes)
+    // Run br sync (bidirectional - exports local changes AND imports remote changes)
     let binary = get_cli_binary();
-    let mut sync_args = vec!["sync"];
-    if supports_daemon_flag() {
-        sync_args.push("--no-daemon");
-    }
     match new_command(&binary)
-        .args(&sync_args)
+        .arg("sync")
         .current_dir(&working_dir)
         .env("PATH", get_extended_path())
         .env("BEADS_PATH", &working_dir)
@@ -1525,22 +1279,11 @@ async fn bd_sync(cwd: Option<String>) -> Result<(), String> {
                 .unwrap_or_else(|_| ".".to_string())
         });
 
-    // Dolt backend handles its own sync via git — skip bd sync
-    let beads_dir = std::path::Path::new(&working_dir).join(".beads");
-    if project_uses_dolt(&beads_dir) {
-        log_info!("[bd_sync] Skipping — Dolt backend handles sync via git");
-        return Ok(());
-    }
-
     let binary = get_cli_binary();
     log_info!("[bd_sync] Manual sync requested for: {}", working_dir);
 
-    let mut sync_args = vec!["sync"];
-    if supports_daemon_flag() {
-        sync_args.push("--no-daemon");
-    }
     let output = new_command(&binary)
-        .args(&sync_args)
+        .arg("sync")
         .current_dir(&working_dir)
         .env("PATH", get_extended_path())
         .env("BEADS_PATH", &working_dir)
@@ -1586,34 +1329,8 @@ async fn bd_repair_database(cwd: Option<String>) -> Result<RepairResult, String>
         return Err("No .beads directory found in this project".to_string());
     }
 
-    // Dolt backend: use `bd doctor --fix --yes`
-    if project_uses_dolt(&beads_dir) {
-        log_info!("[bd_repair] Using Dolt-based repair strategy (bd >= 0.50.0): bd doctor --fix --yes");
-        let binary = get_cli_binary();
-        let output = new_command(&binary)
-            .args(&["doctor", "--fix", "--yes"])
-            .current_dir(&working_dir)
-            .env("PATH", get_extended_path())
-            .env("BEADS_PATH", &working_dir)
-            .output()
-            .map_err(|e| format!("Failed to run bd doctor: {}", e))?;
-
-        return if output.status.success() {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            log_info!("[bd_repair] Dolt repair successful: {}", stdout.trim());
-            Ok(RepairResult {
-                success: true,
-                message: format!("Database repaired via bd doctor. {}", stdout.trim()),
-                backup_path: None,
-            })
-        } else {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            log_error!("[bd_repair] Dolt repair failed: {}", stderr.trim());
-            Err(format!("Repair failed: {}", stderr.trim()))
-        };
-    }
-
-    // SQLite backend: original repair logic
+    // br stores SQLite + JSONL: the database is rebuilt from issues.jsonl,
+    // so a corrupt database is repaired by replacing it and re-importing.
     let db_path = beads_dir.join("beads.db");
     let jsonl_path = beads_dir.join("issues.jsonl");
     let backup_path = beads_dir.join("beads.db.backup");
@@ -1627,19 +1344,15 @@ async fn bd_repair_database(cwd: Option<String>) -> Result<RepairResult, String>
         });
     }
 
-    // For bd < 0.50.0: require issues.jsonl for repair (db is rebuilt from JSONL)
-    if uses_jsonl_files() {
-        let jsonl_size = std::fs::metadata(&jsonl_path)
-            .map(|m| m.len())
-            .unwrap_or(0);
+    // Require issues.jsonl for repair (the db is rebuilt from JSONL)
+    let jsonl_size = std::fs::metadata(&jsonl_path)
+        .map(|m| m.len())
+        .unwrap_or(0);
 
-        if !jsonl_path.exists() || jsonl_size == 0 {
-            return Err("Cannot repair: issues.jsonl is missing or empty. Your data would be lost.".to_string());
-        }
-        log_info!("[bd_repair] Using JSONL-based repair strategy (bd < 0.50.0)");
-    } else {
-        log_info!("[bd_repair] Using repair strategy for unknown version");
+    if !jsonl_path.exists() || jsonl_size == 0 {
+        return Err("Cannot repair: issues.jsonl is missing or empty. Your data would be lost.".to_string());
     }
+    log_info!("[bd_repair] Using JSONL-based repair strategy");
 
     // Create backup of current database
     if let Err(e) = std::fs::copy(&db_path, &backup_path) {
@@ -1654,14 +1367,9 @@ async fn bd_repair_database(cwd: Option<String>) -> Result<RepairResult, String>
     std::fs::remove_file(beads_dir.join("beads.db-wal")).ok();
     log_info!("[bd_repair] Removed old database files");
 
-    // Test that bd can now work (it will recreate the database)
-    let mut test_args = vec!["list", "--limit=1"];
-    if supports_daemon_flag() {
-        test_args.push("--no-daemon");
-    }
-    test_args.push("--json");
+    // Test that the CLI can now work (it will recreate the database from JSONL)
     let test_output = new_command(&get_cli_binary())
-        .args(&test_args)
+        .args(&["list", "--limit=1", "--json"])
         .current_dir(&working_dir)
         .env("PATH", get_extended_path())
         .env("BEADS_PATH", &working_dir)
@@ -1686,699 +1394,6 @@ async fn bd_repair_database(cwd: Option<String>) -> Result<RepairResult, String>
             Err(format!("Failed to verify repair: {}", e))
         }
     }
-}
-
-// ============================================================================
-// Dolt Migration
-// ============================================================================
-
-#[derive(Debug, serde::Serialize)]
-struct MigrateResult {
-    success: bool,
-    message: String,
-}
-
-/// Remove orphaned Dolt lock files that block database access.
-///
-/// Uses `lsof` to check if any process actually holds the lock file open.
-/// - If no process has it open → orphaned lock from a crashed/finished bd → safe to remove.
-/// - If a process has it open → active agent (Claude Code, Gastown, etc.) → leave it alone.
-///
-/// This is the only reliable way to distinguish a stale lock from an active one,
-/// regardless of timing. bd 0.55+ in embedded Dolt mode leaves noms/LOCK behind
-/// after every command, so these accumulate and block subsequent operations.
-
-#[derive(Debug, serde::Serialize)]
-struct CleanupResult {
-    removed: Vec<String>,
-}
-
-/// Stale lock cleanup — currently a no-op.
-///
-/// bd 0.55 in embedded Dolt mode leaves lock files (dolt-access.lock, noms/LOCK)
-/// after every command. These locks are NOT safe to remove externally:
-/// - Removing noms/LOCK causes Dolt SIGSEGV (nil pointer dereference) on next bd call
-/// - Removing dolt-access.lock also triggers the same Dolt crash
-///
-/// This is a bd/Dolt bug that needs to be fixed upstream. The command is kept as a
-/// no-op so the frontend call doesn't need to change when a fix becomes available.
-#[tauri::command]
-async fn bd_cleanup_stale_locks(cwd: Option<String>) -> Result<CleanupResult, String> {
-    let _ = cwd; // suppress unused warning
-    Ok(CleanupResult { removed: vec![] })
-}
-
-/// Check if a project needs Dolt migration.
-/// Returns true when bd >= 0.50, project has .beads/, but is not fully migrated to Dolt.
-/// Detects both "never migrated" and "partially migrated" (dolt/ dir exists but .dolt marker missing).
-#[derive(Debug, serde::Serialize)]
-struct MigrationStatus {
-    needs_migration: bool,
-    reason: String,
-}
-
-#[tauri::command]
-async fn bd_check_needs_migration(cwd: Option<String>) -> Result<MigrationStatus, String> {
-    let working_dir = cwd
-        .or_else(|| env::var("BEADS_PATH").ok())
-        .unwrap_or_else(|| {
-            env::current_dir()
-                .map(|p| p.to_string_lossy().to_string())
-                .unwrap_or_else(|_| ".".to_string())
-        });
-
-    let beads_dir = std::path::Path::new(&working_dir).join(".beads");
-
-    if !beads_dir.exists() {
-        return Ok(MigrationStatus {
-            needs_migration: false,
-            reason: "No .beads directory".to_string(),
-        });
-    }
-
-    // Check bd version — only bd >= 0.50 requires Dolt
-    match get_cli_client_info() {
-        Some((CliClient::Bd, major, minor, _)) if major > 0 || minor >= 50 => {
-            // bd >= 0.50: check if project is fully migrated
-        }
-        _ => {
-            return Ok(MigrationStatus {
-                needs_migration: false,
-                reason: "bd version does not require Dolt".to_string(),
-            });
-        }
-    }
-
-    // Already fully using Dolt? (.beads/.dolt exists)
-    if project_uses_dolt(&beads_dir) {
-        return Ok(MigrationStatus {
-            needs_migration: false,
-            reason: "Already using Dolt backend".to_string(),
-        });
-    }
-
-    // Check for partial migration (dolt/ dir exists but not complete)
-    let dolt_dir = beads_dir.join("dolt");
-    if dolt_dir.exists() {
-        return Ok(MigrationStatus {
-            needs_migration: true,
-            reason: "Partial migration detected (dolt/ exists but migration incomplete)".to_string(),
-        });
-    }
-
-    // Has JSONL data but no Dolt — needs migration
-    let jsonl_path = beads_dir.join("issues.jsonl");
-    if jsonl_path.exists() {
-        let jsonl_size = std::fs::metadata(&jsonl_path).map(|m| m.len()).unwrap_or(0);
-        if jsonl_size > 0 {
-            return Ok(MigrationStatus {
-                needs_migration: true,
-                reason: "SQLite/JSONL project needs Dolt migration".to_string(),
-            });
-        }
-    }
-
-    // Has SQLite db but no Dolt
-    let db_path = beads_dir.join("beads.db");
-    if db_path.exists() {
-        return Ok(MigrationStatus {
-            needs_migration: true,
-            reason: "SQLite project needs Dolt migration".to_string(),
-        });
-    }
-
-    // Empty project — no migration needed (bd init will create Dolt directly)
-    Ok(MigrationStatus {
-        needs_migration: false,
-        reason: "Empty project".to_string(),
-    })
-}
-
-/// Re-prefix an issue ID if it uses a non-target prefix
-fn reprefix_id(id: &str, target_prefix: &str, prefix_counts: &std::collections::HashMap<String, usize>) -> String {
-    if let Some(last_dash) = id.rfind('-') {
-        let current_prefix = &id[..last_dash];
-        if current_prefix != target_prefix && prefix_counts.contains_key(current_prefix) {
-            return format!("{}{}", target_prefix, &id[last_dash..]);
-        }
-    }
-    id.to_string()
-}
-
-#[tauri::command]
-async fn bd_migrate_to_dolt(cwd: Option<String>) -> Result<MigrateResult, String> {
-    let working_dir = cwd
-        .or_else(|| env::var("BEADS_PATH").ok())
-        .unwrap_or_else(|| {
-            env::current_dir()
-                .map(|p| p.to_string_lossy().to_string())
-                .unwrap_or_else(|_| ".".to_string())
-        });
-
-    log_info!("[bd_migrate] Starting Dolt migration for: {}", working_dir);
-
-    let beads_dir = std::path::Path::new(&working_dir).join(".beads");
-
-    // Check if .beads directory exists
-    if !beads_dir.exists() {
-        return Err("No .beads directory found in this project".to_string());
-    }
-
-    // Already using Dolt?
-    if project_uses_dolt(&beads_dir) {
-        return Ok(MigrateResult {
-            success: true,
-            message: "Project already uses the Dolt backend.".to_string(),
-        });
-    }
-
-    // Verify bd >= 0.50
-    if let Some((_, major, minor, _)) = get_cli_client_info() {
-        if major == 0 && minor < 50 {
-            return Err(format!(
-                "bd version 0.50+ is required for Dolt migration (current: {}.{})",
-                major, minor
-            ));
-        }
-    } else {
-        return Err("Could not determine bd version".to_string());
-    }
-
-    // Clean up partial migration if dolt/ directory exists
-    let dolt_dir = beads_dir.join("dolt");
-    if dolt_dir.exists() {
-        log_info!("[bd_migrate] Removing partial dolt/ directory for re-migration");
-        std::fs::remove_dir_all(&dolt_dir)
-            .map_err(|e| format!("Failed to remove partial dolt/ directory: {}", e))?;
-    }
-
-    // Remove dolt-access.lock if present
-    let dolt_lock = beads_dir.join("dolt-access.lock");
-    if dolt_lock.exists() {
-        std::fs::remove_file(&dolt_lock).ok();
-    }
-
-    // Try `bd migrate --to-dolt --yes` first
-    let binary = get_cli_binary();
-    let output = new_command(&binary)
-        .args(&["migrate", "--to-dolt", "--yes"])
-        .current_dir(&working_dir)
-        .env("PATH", get_extended_path())
-        .env("BEADS_PATH", &working_dir)
-        .output()
-        .map_err(|e| format!("Failed to run bd migrate: {}", e))?;
-
-    if output.status.success() {
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        log_info!("[bd_migrate] Migration via bd migrate successful: {}", stdout.trim());
-        return Ok(MigrateResult {
-            success: true,
-            message: format!("Migration to Dolt completed successfully. {}", stdout.trim()),
-        });
-    }
-
-    // bd migrate failed (typically: corrupt SQLite, missing table, etc.)
-    // Fallback: bd init + bd import from JSONL
-    let stderr_migrate = String::from_utf8_lossy(&output.stderr);
-    log_info!("[bd_migrate] bd migrate failed ({}), trying init+import fallback", stderr_migrate.trim());
-
-    let jsonl_path = beads_dir.join("issues.jsonl");
-    if !jsonl_path.exists() || std::fs::metadata(&jsonl_path).map(|m| m.len()).unwrap_or(0) == 0 {
-        // Empty project — no JSONL data to import, just run bd init
-        log_info!("[bd_migrate] No issues.jsonl data — empty project, attempting init-only migration");
-        // Rename existing .db files to .db.backup so bd init doesn't refuse
-        if let Ok(entries) = std::fs::read_dir(&beads_dir) {
-            for entry in entries.flatten() {
-                let name = entry.file_name().to_string_lossy().to_string();
-                if name.ends_with(".db") && !name.ends_with(".db.backup") {
-                    let src = entry.path();
-                    let dst = beads_dir.join(format!("{}.backup", name));
-                    log_info!("[bd_migrate] Renaming {} -> {}", src.display(), dst.display());
-                    std::fs::rename(&src, &dst).ok();
-                }
-                // Also remove .db-shm and .db-wal
-                if name.ends_with(".db-shm") || name.ends_with(".db-wal") {
-                    std::fs::remove_file(entry.path()).ok();
-                }
-            }
-        }
-        let init_output = new_command(&binary)
-            .args(&["init", "--prefix", "project"])
-            .current_dir(&working_dir)
-            .env("PATH", get_extended_path())
-            .env("BEADS_PATH", &working_dir)
-            .output()
-            .map_err(|e| format!("Failed to run bd init: {}", e))?;
-        if init_output.status.success() {
-            log_info!("[bd_migrate] Empty project initialized with Dolt backend");
-            return Ok(MigrateResult {
-                success: true,
-                message: "Migration complete (empty project — initialized with Dolt backend)".to_string(),
-            });
-        }
-        let init_stderr = String::from_utf8_lossy(&init_output.stderr);
-        return Err(format!(
-            "Migration failed (empty project, bd init also failed): {}. Original error: {}",
-            init_stderr.trim(), stderr_migrate.trim()
-        ));
-    }
-
-    // Detect prefix from JSONL — use the most common prefix
-    let jsonl_content = std::fs::read_to_string(&jsonl_path)
-        .map_err(|e| format!("Failed to read issues.jsonl: {}", e))?;
-    let mut prefix_counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
-    for line in jsonl_content.lines() {
-        let trimmed = line.trim();
-        if trimmed.is_empty() { continue; }
-        if let Ok(v) = serde_json::from_str::<serde_json::Value>(trimmed) {
-            if let Some(id) = v.get("id").and_then(|i| i.as_str()) {
-                if let Some(last_dash) = id.rfind('-') {
-                    let suffix = &id[last_dash + 1..];
-                    if suffix.chars().all(|c| c.is_alphanumeric()) && !suffix.is_empty() {
-                        *prefix_counts.entry(id[..last_dash].to_string()).or_insert(0) += 1;
-                    }
-                }
-            }
-        }
-    }
-    let prefix = prefix_counts
-        .iter()
-        .max_by_key(|(_, count)| *count)
-        .map(|(p, _)| p.clone())
-        .ok_or_else(|| "Could not detect issue prefix from issues.jsonl".to_string())?;
-
-    if prefix_counts.len() > 1 {
-        log_info!(
-            "[bd_migrate] Multiple prefixes found: {:?}. Using most common: {}",
-            prefix_counts, prefix
-        );
-    }
-    log_info!("[bd_migrate] Detected prefix: {}", prefix);
-
-    // Clean dolt dir again (bd migrate may have created a partial one)
-    if dolt_dir.exists() {
-        log_info!("[bd_migrate] Removing dolt/ directory before init");
-        if let Err(e) = std::fs::remove_dir_all(&dolt_dir) {
-            log_error!("[bd_migrate] Failed to remove dolt/: {}", e);
-            return Err(format!("Failed to clean up dolt/ directory: {}", e));
-        }
-    }
-    // Remove dolt-access.lock
-    let dolt_lock2 = beads_dir.join("dolt-access.lock");
-    if dolt_lock2.exists() {
-        std::fs::remove_file(&dolt_lock2).ok();
-    }
-    // Backup main SQLite .db file (for comment restoration), then remove all SQLite files
-    if let Ok(entries) = std::fs::read_dir(&beads_dir) {
-        for entry in entries.flatten() {
-            let name = entry.file_name().to_string_lossy().to_string();
-            if name.ends_with(".db") && !name.ends_with(".db.backup") {
-                // Rename to .backup before deleting (preserves comments for Step 6)
-                let backup_name = format!("{}.backup", name);
-                let backup_path = beads_dir.join(&backup_name);
-                if !backup_path.exists() {
-                    log_info!("[bd_migrate] Backing up SQLite: {} -> {}", name, backup_name);
-                    std::fs::rename(entry.path(), &backup_path).ok();
-                } else {
-                    log_info!("[bd_migrate] Removing SQLite file: {} (backup already exists)", name);
-                    std::fs::remove_file(entry.path()).ok();
-                }
-            } else if name.ends_with(".db-shm") || name.ends_with(".db-wal") || name.ends_with(".db?mode=ro") {
-                log_info!("[bd_migrate] Removing SQLite file: {}", name);
-                std::fs::remove_file(entry.path()).ok();
-            }
-        }
-    }
-
-    // Reset metadata.json if it was set to dolt by a previous failed attempt
-    let metadata_path = beads_dir.join("metadata.json");
-    if metadata_path.exists() {
-        if let Ok(content) = std::fs::read_to_string(&metadata_path) {
-            if content.contains("\"backend\":\"dolt\"") || content.contains("\"backend\": \"dolt\"") {
-                log_info!("[bd_migrate] Resetting metadata.json backend from dolt to sqlite");
-                std::fs::remove_file(&metadata_path).ok();
-            }
-        }
-    }
-
-    // Remove .local_version (stale after cleanup)
-    let local_version = beads_dir.join(".local_version");
-    if local_version.exists() {
-        std::fs::remove_file(&local_version).ok();
-    }
-
-    // Step 1: bd init --prefix <prefix>
-    let init_output = new_command(&binary)
-        .args(&["init", "--prefix", &prefix])
-        .current_dir(&working_dir)
-        .env("PATH", get_extended_path())
-        .env("BEADS_PATH", &working_dir)
-        .output()
-        .map_err(|e| format!("Failed to run bd init: {}", e))?;
-
-    if !init_output.status.success() {
-        let stderr = String::from_utf8_lossy(&init_output.stderr);
-        return Err(format!("bd init failed: {}", stderr.trim()));
-    }
-    log_info!("[bd_migrate] bd init successful");
-
-    // Step 2: Filter tombstone issues and sanitize fields for Dolt compatibility
-    let temp_jsonl = beads_dir.join("_migrate_clean.jsonl");
-    {
-        let mut clean_lines = Vec::new();
-        let mut skipped = 0u32;
-        for line in jsonl_content.lines() {
-            let trimmed = line.trim();
-            if trimmed.is_empty() {
-                continue;
-            }
-            match serde_json::from_str::<serde_json::Value>(trimmed) {
-                Ok(mut v) => {
-                    if v.get("status").and_then(|s| s.as_str()) == Some("tombstone") {
-                        skipped += 1;
-                        continue;
-                    }
-                    // Re-prefix issues with a different prefix to match the target
-                    if let Some(id) = v.get("id").and_then(|i| i.as_str()).map(String::from) {
-                        if let Some(last_dash) = id.rfind('-') {
-                            let issue_prefix = &id[..last_dash];
-                            if issue_prefix != prefix {
-                                let suffix = &id[last_dash..]; // includes the '-'
-                                let new_id = format!("{}{}", prefix, suffix);
-                                let old_prefix = issue_prefix.to_string();
-                                log_info!("[bd_migrate] Re-prefixing {} -> {}", id, new_id);
-                                let obj = v.as_object_mut().unwrap();
-                                obj.insert("id".to_string(), serde_json::Value::String(new_id));
-                                // Re-prefix dependency references
-                                if let Some(deps) = obj.get_mut("dependencies").and_then(|d| d.as_array_mut()) {
-                                    for dep in deps.iter_mut() {
-                                        if let Some(dep_obj) = dep.as_object_mut() {
-                                            for key in &["issue_id", "depends_on_id"] {
-                                                if let Some(val) = dep_obj.get(*key).and_then(|v| v.as_str()).map(String::from) {
-                                                    if val.starts_with(&old_prefix) {
-                                                        let new_val = format!("{}{}", prefix, &val[old_prefix.len()..]);
-                                                        dep_obj.insert(key.to_string(), serde_json::Value::String(new_val));
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    // Truncate external_ref if it contains multiple lines (attachment paths)
-                    // Dolt's external_ref column can't hold multi-line values with long paths
-                    // Keep only the first line (the meaningful ref: redmine ID, URL, etc.)
-                    let needs_truncate = v.get("external_ref")
-                        .and_then(|e| e.as_str())
-                        .map(|s| s.contains('\n') || s.len() > 100)
-                        .unwrap_or(false);
-                    if needs_truncate {
-                        let ext_ref = v["external_ref"].as_str().unwrap();
-                        let first_line = ext_ref.lines().next().unwrap_or("").to_string();
-                        let issue_id = v.get("id").and_then(|i| i.as_str()).unwrap_or("?").to_string();
-                        let orig_len = ext_ref.len();
-                        v.as_object_mut().unwrap().insert(
-                            "external_ref".to_string(),
-                            serde_json::Value::String(first_line),
-                        );
-                        log_info!(
-                            "[bd_migrate] Truncated external_ref for issue {} (was {} chars)",
-                            issue_id, orig_len
-                        );
-                    }
-                    clean_lines.push(serde_json::to_string(&v).unwrap_or_else(|_| trimmed.to_string()));
-                }
-                Err(_) => {
-                    skipped += 1;
-                    continue;
-                }
-            }
-        }
-        log_info!(
-            "[bd_migrate] Filtered JSONL: {} valid, {} skipped (tombstone/malformed)",
-            clean_lines.len(),
-            skipped
-        );
-
-        // Empty project — no issues to import, just init is enough
-        if clean_lines.is_empty() {
-            log_info!("[bd_migrate] No issues to import — empty project, init-only migration");
-            return Ok(MigrateResult {
-                success: true,
-                message: "Migration complete (empty project — initialized with Dolt backend)".to_string(),
-            });
-        }
-
-        std::fs::write(&temp_jsonl, clean_lines.join("\n") + "\n")
-            .map_err(|e| format!("Failed to write cleaned JSONL: {}", e))?;
-    }
-
-    // Step 3: bd import -i <cleaned_jsonl>
-    let import_output = new_command(&binary)
-        .args(&["import", "-i", &temp_jsonl.to_string_lossy()])
-        .current_dir(&working_dir)
-        .env("PATH", get_extended_path())
-        .env("BEADS_PATH", &working_dir)
-        .output()
-        .map_err(|e| format!("Failed to run bd import: {}", e))?;
-
-    // Clean up temp file
-    std::fs::remove_file(&temp_jsonl).ok();
-
-    if !import_output.status.success() {
-        let stderr = String::from_utf8_lossy(&import_output.stderr);
-        log_error!("[bd_migrate] Import failed: {}", stderr.trim());
-        // Clean up failed migration so the modal will reappear
-        if dolt_dir.exists() {
-            std::fs::remove_dir_all(&dolt_dir).ok();
-        }
-        if beads_dir.join("dolt-access.lock").exists() {
-            std::fs::remove_file(beads_dir.join("dolt-access.lock")).ok();
-        }
-        return Err(format!("Import failed: {}", stderr.trim()));
-    }
-
-    let stdout = String::from_utf8_lossy(&import_output.stdout);
-    log_info!("[bd_migrate] Import successful: {}", stdout.trim());
-
-    // Step 4: Restore labels (bd import doesn't preserve them)
-    // Re-read JSONL to find issues with labels and apply them via bd update
-    let mut labels_restored = 0u32;
-    for line in jsonl_content.lines() {
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-        if let Ok(v) = serde_json::from_str::<serde_json::Value>(trimmed) {
-            if v.get("status").and_then(|s| s.as_str()) == Some("tombstone") {
-                continue;
-            }
-            let labels: Vec<String> = v
-                .get("labels")
-                .and_then(|l| l.as_array())
-                .map(|arr| {
-                    arr.iter()
-                        .filter_map(|v| v.as_str().map(String::from))
-                        .collect()
-                })
-                .unwrap_or_default();
-
-            if labels.is_empty() {
-                continue;
-            }
-
-            let issue_id = match v.get("id").and_then(|i| i.as_str()) {
-                Some(id) => id,
-                None => continue,
-            };
-
-            // bd update <id> --set-labels label1 --set-labels label2
-            let mut args = vec!["update".to_string(), issue_id.to_string()];
-            for label in &labels {
-                args.push("--set-labels".to_string());
-                args.push(label.clone());
-            }
-
-            let label_output = new_command(&binary)
-                .args(&args.iter().map(|s| s.as_str()).collect::<Vec<_>>())
-                .current_dir(&working_dir)
-                .env("PATH", get_extended_path())
-                .env("BEADS_PATH", &working_dir)
-                .output();
-
-            match label_output {
-                Ok(o) if o.status.success() => {
-                    labels_restored += 1;
-                }
-                Ok(o) => {
-                    let stderr = String::from_utf8_lossy(&o.stderr);
-                    log_info!("[bd_migrate] Failed to restore labels for {}: {}", issue_id, stderr.trim());
-                }
-                Err(e) => {
-                    log_info!("[bd_migrate] Failed to run bd update for {}: {}", issue_id, e);
-                }
-            }
-        }
-    }
-
-    if labels_restored > 0 {
-        log_info!("[bd_migrate] Restored labels for {} issues", labels_restored);
-    }
-
-    // Step 5: Restore dependencies/relations (bd import doesn't preserve them)
-    let mut deps_restored = 0u32;
-    for line in jsonl_content.lines() {
-        let trimmed = line.trim();
-        if trimmed.is_empty() { continue; }
-        if let Ok(v) = serde_json::from_str::<serde_json::Value>(trimmed) {
-            if v.get("status").and_then(|s| s.as_str()) == Some("tombstone") { continue; }
-            let dependencies = match v.get("dependencies").and_then(|d| d.as_array()) {
-                Some(deps) if !deps.is_empty() => deps,
-                _ => continue,
-            };
-
-            for dep in dependencies {
-                let dep_obj = match dep.as_object() {
-                    Some(o) => o,
-                    None => continue,
-                };
-
-                let issue_id = match dep_obj.get("issue_id").and_then(|v| v.as_str()) {
-                    Some(id) => id.to_string(),
-                    None => continue,
-                };
-                let depends_on_id = match dep_obj.get("depends_on_id").and_then(|v| v.as_str()) {
-                    Some(id) => id.to_string(),
-                    None => continue,
-                };
-                let dep_type = dep_obj.get("type").and_then(|v| v.as_str()).unwrap_or("blocks").to_string();
-
-                // Re-prefix if needed
-                let issue_id = reprefix_id(&issue_id, &prefix, &prefix_counts);
-                let depends_on_id = reprefix_id(&depends_on_id, &prefix, &prefix_counts);
-
-                // bd dep add <issue_id> <depends_on_id> --type <type>
-                let dep_output = new_command(&binary)
-                    .args(&["dep", "add", &issue_id, &depends_on_id, "--type", &dep_type])
-                    .current_dir(&working_dir)
-                    .env("PATH", get_extended_path())
-                    .env("BEADS_PATH", &working_dir)
-                    .output();
-
-                match dep_output {
-                    Ok(o) if o.status.success() => { deps_restored += 1; }
-                    Ok(o) => {
-                        let stderr = String::from_utf8_lossy(&o.stderr);
-                        log_info!("[bd_migrate] Failed to restore dep {} -> {}: {}", issue_id, depends_on_id, stderr.trim());
-                    }
-                    Err(e) => {
-                        log_info!("[bd_migrate] Failed to run bd dep add: {}", e);
-                    }
-                }
-            }
-        }
-    }
-
-    if deps_restored > 0 {
-        log_info!("[bd_migrate] Restored {} dependencies/relations", deps_restored);
-    }
-
-    // Step 6: Restore comments from SQLite backup (if available)
-    // bd import doesn't preserve comments, and JSONL only has empty bodies.
-    // Look for a .db.backup file with a comments table.
-    let mut comments_restored = 0u32;
-    let sqlite_backup = {
-        let mut found: Option<std::path::PathBuf> = None;
-        if let Ok(entries) = std::fs::read_dir(&beads_dir) {
-            for entry in entries.flatten() {
-                let name = entry.file_name().to_string_lossy().to_string();
-                if name.ends_with(".db.backup") {
-                    found = Some(entry.path());
-                    break;
-                }
-            }
-        }
-        found
-    };
-
-    if let Some(backup_path) = sqlite_backup {
-        log_info!("[bd_migrate] Found SQLite backup: {:?}, restoring comments", backup_path);
-        // Use sqlite3 CLI to extract comments as JSON
-        let sqlite_output = std::process::Command::new("sqlite3")
-            .args(&[
-                backup_path.to_string_lossy().as_ref(),
-                "-json",
-                "SELECT issue_id, author, text FROM comments WHERE text IS NOT NULL AND text != '' ORDER BY created_at ASC",
-            ])
-            .output();
-
-        if let Ok(output) = sqlite_output {
-            if output.status.success() {
-                let json_str = String::from_utf8_lossy(&output.stdout);
-                if let Ok(rows) = serde_json::from_str::<Vec<serde_json::Value>>(&json_str) {
-                    for row in &rows {
-                        let issue_id = match row.get("issue_id").and_then(|v| v.as_str()) {
-                            Some(id) => id.to_string(),
-                            None => continue,
-                        };
-                        let author = row.get("author").and_then(|v| v.as_str()).unwrap_or("unknown");
-                        let text = match row.get("text").and_then(|v| v.as_str()) {
-                            Some(t) if !t.is_empty() => t,
-                            _ => continue,
-                        };
-
-                        // Re-prefix if needed
-                        let issue_id = reprefix_id(&issue_id, &prefix, &prefix_counts);
-
-                        // Write comment to temp file to handle multiline text
-                        let comment_file = beads_dir.join("_migrate_comment.txt");
-                        if std::fs::write(&comment_file, text).is_err() {
-                            continue;
-                        }
-
-                        let comment_output = new_command(&binary)
-                            .args(&["comments", "add", &issue_id, "-f", &comment_file.to_string_lossy(), "--author", author])
-                            .current_dir(&working_dir)
-                            .env("PATH", get_extended_path())
-                            .env("BEADS_PATH", &working_dir)
-                            .output();
-
-                        match comment_output {
-                            Ok(o) if o.status.success() => { comments_restored += 1; }
-                            Ok(o) => {
-                                let stderr = String::from_utf8_lossy(&o.stderr);
-                                log_info!("[bd_migrate] Failed to restore comment for {}: {}", issue_id, stderr.trim());
-                            }
-                            Err(e) => {
-                                log_info!("[bd_migrate] Failed to run bd comments add: {}", e);
-                            }
-                        }
-                        std::fs::remove_file(&comment_file).ok();
-                    }
-                }
-            } else {
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                log_info!("[bd_migrate] sqlite3 query failed: {}", stderr.trim());
-            }
-        }
-
-        if comments_restored > 0 {
-            log_info!("[bd_migrate] Restored {} comments from SQLite backup", comments_restored);
-        }
-    }
-
-    Ok(MigrateResult {
-        success: true,
-        message: format!(
-            "Migration to Dolt completed (via init+import). {} Labels: {}. Deps: {}. Comments: {}.",
-            stdout.trim(),
-            labels_restored,
-            deps_restored,
-            comments_restored,
-        ),
-    })
 }
 
 // ============================================================================
@@ -2407,21 +1422,11 @@ async fn bd_poll_data(cwd: Option<String>) -> Result<PollData, String> {
     // Single sync for the entire poll cycle
     sync_bd_database(cwd_ref);
 
-    // Fetch issues: single --all call for bd >= 0.55, fallback to 2 calls for older versions
-    let (raw_open, raw_closed) = if supports_list_all_flag() {
-        let all_output = execute_bd("list", &["--all".to_string(), "--limit=0".to_string()], cwd_ref)?;
-        let raw_all = parse_issues_tolerant(&all_output, "bd_poll_data_all")?;
-        let (open, closed): (Vec<_>, Vec<_>) = raw_all.into_iter()
-            .partition(|issue: &BdRawIssue| issue.status != "closed");
-        (open, closed)
-    } else {
-        let open_output = execute_bd("list", &["--limit=0".to_string()], cwd_ref)?;
-        let closed_output = execute_bd("list", &["--status=closed".to_string(), "--limit=0".to_string()], cwd_ref)?;
-        (
-            parse_issues_tolerant(&open_output, "bd_poll_data_open")?,
-            parse_issues_tolerant(&closed_output, "bd_poll_data_closed")?,
-        )
-    };
+    // Fetch issues with a single --all call (br supports --all)
+    let all_output = execute_bd("list", &["--all".to_string(), "--limit=0".to_string()], cwd_ref)?;
+    let raw_all = parse_issues_tolerant(&all_output, "bd_poll_data_all")?;
+    let (raw_open, raw_closed): (Vec<_>, Vec<_>) = raw_all.into_iter()
+        .partition(|issue: &BdRawIssue| issue.status != "closed");
 
     // Fetch ready issues
     let ready_output = execute_bd("ready", &[], cwd_ref)?;
@@ -2456,80 +1461,22 @@ async fn bd_poll_data(cwd: Option<String>) -> Result<PollData, String> {
     })
 }
 
-/// Get the latest mtime across all beads database files.
-/// - Dolt backend (bd >= 0.50.0): checks .beads/ dir, .beads/.dolt/ (legacy) or
-///   .beads/dolt/<name>/.dolt/ (bd 0.52+ nested layout), and manifest files
-/// - SQLite backend: checks beads.db, beads.db-wal, and optionally issues.jsonl
+/// Get the latest mtime across the beads database files.
+/// br stores SQLite + JSONL: check beads.db, beads.db-wal and issues.jsonl.
 fn get_beads_mtime(beads_dir: &std::path::Path) -> Option<std::time::SystemTime> {
-    if project_uses_dolt(beads_dir) {
-        // Dolt backend: check directory mtimes and manifest files
-        let mut times: Vec<std::time::SystemTime> = Vec::new();
-
-        // .beads/ dir mtime
-        if let Ok(m) = fs::metadata(beads_dir) {
-            if let Ok(t) = m.modified() { times.push(t); }
-        }
-
-        // Collect all .dolt/ directories to check:
-        // - Legacy layout: .beads/.dolt/
-        // - Nested layout (bd 0.52+): .beads/dolt/<name>/.dolt/
-        let mut dolt_dirs: Vec<std::path::PathBuf> = Vec::new();
-
-        let legacy_dolt = beads_dir.join(".dolt");
-        if legacy_dolt.is_dir() {
-            dolt_dirs.push(legacy_dolt);
-        }
-
-        let nested_dolt = beads_dir.join("dolt");
-        if nested_dolt.is_dir() {
-            if let Ok(entries) = std::fs::read_dir(&nested_dolt) {
-                for entry in entries.flatten() {
-                    let sub_dolt = entry.path().join(".dolt");
-                    if sub_dolt.is_dir() {
-                        dolt_dirs.push(sub_dolt);
-                    }
-                }
-            }
-        }
-
-        // Check mtime of each .dolt/ dir and its manifest files
-        for dolt_dir in &dolt_dirs {
-            if let Ok(m) = fs::metadata(dolt_dir) {
-                if let Ok(t) = m.modified() { times.push(t); }
-            }
-            for name in &["manifest", "noms/manifest"] {
-                let p = dolt_dir.join(name);
-                if let Ok(m) = fs::metadata(&p) {
-                    if let Ok(t) = m.modified() { times.push(t); }
-                }
-            }
-        }
-
-        // Also check issues.jsonl (Dolt exports to it for git sync)
-        let jsonl_path = beads_dir.join("issues.jsonl");
-        if let Ok(m) = fs::metadata(&jsonl_path) {
-            if let Ok(t) = m.modified() { times.push(t); }
-        }
-
-        times.into_iter().max()
-    } else {
-        // SQLite backend: check db, WAL, and optionally JSONL
-        let mut paths = vec![
-            beads_dir.join("beads.db"),
-            beads_dir.join("beads.db-wal"),
-        ];
-        if uses_jsonl_files() {
-            paths.push(beads_dir.join("issues.jsonl"));
-        }
-        paths.iter()
-            .filter_map(|p| fs::metadata(p).and_then(|m| m.modified()).ok())
-            .max()
-    }
+    let paths = [
+        beads_dir.join("beads.db"),
+        beads_dir.join("beads.db-wal"),
+        beads_dir.join("issues.jsonl"),
+    ];
+    paths.iter()
+        .filter_map(|p| fs::metadata(p).and_then(|m| m.modified()).ok())
+        .max()
 }
 
 /// Check if the beads database has changed since last check (via filesystem mtime).
 /// Returns true if changes detected or if this is the first check.
-/// This is extremely cheap — just a few stat() calls, no bd process spawns.
+/// This is extremely cheap — just a few stat() calls, no CLI process spawns.
 #[tauri::command]
 async fn bd_check_changed(cwd: Option<String>) -> Result<bool, String> {
     let working_dir = cwd
@@ -2594,27 +1541,8 @@ async fn bd_list(options: ListOptions) -> Result<Vec<Issue>, String> {
 
     let mut args: Vec<String> = Vec::new();
 
-    // --all flag only works correctly on bd >= 0.55; for older versions, fallback to 2 calls
+    // br supports --all in a single call
     let use_all = options.include_all.unwrap_or(false);
-    if use_all && !supports_list_all_flag() {
-        // Fallback: fetch open + closed separately and merge
-        log_info!("[bd_list] --all requested but bd < 0.55 — falling back to 2 calls");
-        let mut fallback_args = args.clone();
-        fallback_args.push("--limit=0".to_string());
-
-        let open_output = execute_bd("list", &fallback_args, options.cwd.as_deref())?;
-        let open_issues = parse_issues_tolerant(&open_output, "bd_list_open")?;
-
-        fallback_args.push("--status=closed".to_string());
-        let closed_output = execute_bd("list", &fallback_args, options.cwd.as_deref())?;
-        let closed_issues = parse_issues_tolerant(&closed_output, "bd_list_closed")?;
-
-        let mut all_issues = open_issues;
-        all_issues.extend(closed_issues);
-        log_info!("[bd_list] Found {} issues (fallback)", all_issues.len());
-        return Ok(all_issues.into_iter().map(transform_issue).collect());
-    }
-
     if use_all {
         args.push("--all".to_string());
     }
@@ -2638,7 +1566,7 @@ async fn bd_list(options: ListOptions) -> Result<Vec<Issue>, String> {
         args.push(format!("--assignee={}", assignee));
     }
 
-    // Always disable limit to get all issues (bd defaults to 50)
+    // Always disable limit to get all issues (the CLI defaults to 50)
     args.push("--limit=0".to_string());
 
     let output = execute_bd("list", &args, options.cwd.as_deref())?;
@@ -2654,17 +1582,9 @@ async fn bd_count(options: CwdOptions) -> Result<CountResult, String> {
     // Sync database before reading to ensure data is up-to-date
     sync_bd_database(options.cwd.as_deref());
 
-    // Fetch all issues: single --all call for bd >= 0.55, fallback to 2 calls for older versions
-    let raw_issues = if supports_list_all_flag() {
-        let all_output = execute_bd("list", &["--all".to_string(), "--limit=0".to_string()], options.cwd.as_deref())?;
-        parse_issues_tolerant(&all_output, "bd_count_all")?
-    } else {
-        let open_output = execute_bd("list", &["--limit=0".to_string()], options.cwd.as_deref())?;
-        let closed_output = execute_bd("list", &["--status=closed".to_string(), "--limit=0".to_string()], options.cwd.as_deref())?;
-        let mut issues = parse_issues_tolerant(&open_output, "bd_count_open")?;
-        issues.extend(parse_issues_tolerant(&closed_output, "bd_count_closed")?);
-        issues
-    };
+    // Fetch all issues in a single --all call
+    let all_output = execute_bd("list", &["--all".to_string(), "--limit=0".to_string()], options.cwd.as_deref())?;
+    let raw_issues = parse_issues_tolerant(&all_output, "bd_count_all")?;
 
     let mut by_type: HashMap<String, usize> = HashMap::new();
     by_type.insert("bug".to_string(), 0);
@@ -2739,24 +1659,24 @@ async fn bd_show(id: String, options: CwdOptions) -> Result<Option<Issue>, Strin
     let output = match execute_bd("show", std::slice::from_ref(&id), options.cwd.as_deref()) {
         Ok(output) => output,
         Err(e) => {
-            // Handle "not found" errors gracefully (future bd versions may use non-zero exit)
+            // Handle "not found" errors gracefully (future CLI versions may use non-zero exit)
             let err_lower = e.to_lowercase();
             if err_lower.contains("no issue found") || err_lower.contains("not found") {
-                log_info!("[bd_show] Issue {} not found (error from bd): {}", id, e);
+                log_info!("[bd_show] Issue {} not found (error from CLI): {}", id, e);
                 return Ok(None);
             }
             return Err(e);
         }
     };
 
-    // Handle empty output (current bd behavior for missing issues: exit 0, empty stdout)
+    // Handle empty output (current CLI behavior for missing issues: exit 0, empty stdout)
     let trimmed = output.trim();
     if trimmed.is_empty() {
-        log_info!("[bd_show] Issue {} not found (empty output from bd)", id);
+        log_info!("[bd_show] Issue {} not found (empty output from CLI)", id);
         return Ok(None);
     }
 
-    // bd show can return either a single object or an array
+    // show can return either a single object or an array
     let result: serde_json::Value = serde_json::from_str(trimmed)
         .map_err(|e| {
             log_error!("[bd_show] Failed to parse JSON for {}: {}", id, e);
@@ -2912,15 +1832,15 @@ async fn bd_update(id: String, updates: UpdatePayload) -> Result<Option<Issue>, 
         args.push(parent.clone());
     }
 
-    log::info!("[bd_update] Executing: bd update {}", args.join(" "));
+    log::info!("[bd_update] Executing: br update {}", args.join(" "));
     let output = execute_bd("update", &args, updates.cwd.as_deref())?;
 
     log::info!("[bd_update] Raw output: {}", output.chars().take(500).collect::<String>());
 
-    // Handle empty output from bd CLI (some updates return empty response)
+    // Handle empty output from the CLI (some updates return empty response)
     let trimmed_output = output.trim();
     if trimmed_output.is_empty() {
-        log::info!("[bd_update] Empty response from bd, fetching issue {} to get updated data", id);
+        log::info!("[bd_update] Empty response from CLI, fetching issue {} to get updated data", id);
         // Fetch the updated issue directly
         let show_output = execute_bd("show", std::slice::from_ref(&id), updates.cwd.as_deref())?;
         let show_result: serde_json::Value = serde_json::from_str(&show_output)
@@ -2940,7 +1860,7 @@ async fn bd_update(id: String, updates: UpdatePayload) -> Result<Option<Issue>, 
         return Ok(raw_issue.map(transform_issue));
     }
 
-    // bd update can return either a single object or an array
+    // update can return either a single object or an array
     let result: serde_json::Value = serde_json::from_str(trimmed_output)
         .map_err(|e| {
             log::error!("[bd_update] Failed to parse JSON: {}", e);
@@ -2973,11 +1893,7 @@ async fn bd_update(id: String, updates: UpdatePayload) -> Result<Option<Issue>, 
 async fn bd_close(id: String, options: CwdOptions) -> Result<serde_json::Value, String> {
     log_info!("[bd_close] Closing issue: {} with cwd: {:?}", id, options.cwd);
 
-    let mut args = vec![id.clone()];
-    // br supports --suggest-next for showing newly unblocked issues
-    if matches!(get_cli_client_info(), Some((CliClient::Br, _, _, _))) {
-        args.push("--suggest-next".to_string());
-    }
+    let args = vec![id.clone(), "--suggest-next".to_string()];
 
     let output = execute_bd("close", &args, options.cwd.as_deref())?;
 
@@ -3034,10 +1950,7 @@ async fn bd_label_remove(id: String, label: String, options: CwdOptions) -> Resu
 
 #[tauri::command]
 async fn bd_delete(id: String, options: CwdOptions) -> Result<serde_json::Value, String> {
-    let mut args = vec![id.clone(), "--force".to_string()];
-    if supports_delete_hard_flag() {
-        args.push("--hard".to_string());
-    }
+    let args = vec![id.clone(), "--force".to_string()];
     log::info!("[bd_delete] Deleting issue: {} with args: {:?}", id, args);
     execute_bd("delete", &args, options.cwd.as_deref())?;
 
@@ -3120,7 +2033,7 @@ async fn bd_dep_remove_relation(id1: String, id2: String, options: CwdOptions) -
 
 #[tauri::command]
 async fn bd_available_relation_types() -> Vec<serde_json::Value> {
-    let common: Vec<(&str, &str)> = vec![
+    let types: Vec<(&str, &str)> = vec![
         ("relates-to", "Relates To"),
         ("related", "Related"),
         ("discovered-from", "Discovered From"),
@@ -3129,20 +2042,6 @@ async fn bd_available_relation_types() -> Vec<serde_json::Value> {
         ("caused-by", "Caused By"),
         ("replies-to", "Replies To"),
     ];
-    let bd_only: Vec<(&str, &str)> = vec![
-        ("tracks", "Tracks"),
-        ("until", "Until"),
-        ("validates", "Validates"),
-    ];
-
-    let types = match get_cli_client_info() {
-        Some((CliClient::Br, _, _, _)) => common,
-        _ => {
-            let mut all = common;
-            all.extend(bd_only);
-            all
-        }
-    };
 
     types.into_iter().map(|(v, l)| serde_json::json!({ "value": v, "label": l })).collect()
 }
@@ -3239,14 +2138,12 @@ fn quick_access_roots() -> Vec<DirectoryEntry> {
         .filter(|(_, path)| path.is_dir())
         .map(|(name, path)| {
             let beads_path = path.join(".beads");
-            let has_beads = beads_path.is_dir();
             DirectoryEntry {
                 name,
                 path: strip_verbatim_prefix(&path.to_string_lossy()),
                 is_directory: true,
-                has_beads,
+                has_beads: beads_path.is_dir(),
                 has_grace: path.join(".grace5").is_dir(),
-                uses_dolt: has_beads && project_uses_dolt(&beads_path),
             }
         })
         .collect()
@@ -3293,9 +2190,7 @@ fn list_directory(path: Option<String>) -> Result<FsListResult, String> {
 
         if metadata.is_dir() {
             let full_path = entry.path();
-            let beads_path = full_path.join(".beads");
-            let has_beads = beads_path.is_dir();
-            let uses_dolt = has_beads && project_uses_dolt(&beads_path);
+            let has_beads = full_path.join(".beads").is_dir();
 
             directories.push(DirectoryEntry {
                 name,
@@ -3303,7 +2198,6 @@ fn list_directory(path: Option<String>) -> Result<FsListResult, String> {
                 is_directory: true,
                 has_beads,
                 has_grace: full_path.join(".grace5").is_dir(),
-                uses_dolt,
             });
         }
     }
@@ -3318,14 +2212,11 @@ fn list_directory(path: Option<String>) -> Result<FsListResult, String> {
     });
 
     let current_beads_path = target_path.join(".beads");
-    let current_has_beads = current_beads_path.is_dir();
-    let current_uses_dolt = current_has_beads && project_uses_dolt(&current_beads_path);
 
     Ok(FsListResult {
         current_path: strip_verbatim_prefix(&target_path.to_string_lossy()),
-        has_beads: current_has_beads,
+        has_beads: current_beads_path.is_dir(),
         has_grace: target_path.join(".grace5").is_dir(),
-        uses_dolt: current_uses_dolt,
         entries: directories,
     })
 }
@@ -3546,10 +2437,10 @@ async fn check_for_updates_demo() -> Result<UpdateInfo, String> {
 
 #[tauri::command]
 async fn check_bd_cli_update() -> Result<BdCliUpdateInfo, String> {
-    // Get current bd version
+    // Get current br version
     let version_str = get_bd_version().await;
     if version_str.contains("not found") {
-        return Err("bd CLI not found".to_string());
+        return Err("br CLI not found".to_string());
     }
 
     // Parse semver from version string
@@ -3557,16 +2448,8 @@ async fn check_bd_cli_update() -> Result<BdCliUpdateInfo, String> {
         .ok_or_else(|| format!("Could not parse version from: {}", version_str))?;
     let current_version = format!("{}.{}.{}", current_tuple.0, current_tuple.1, current_tuple.2);
 
-    // Determine the correct GitHub repo based on client type (bd vs br)
-    let client_type = detect_cli_client(&version_str);
-    let api_url = match client_type {
-        CliClient::Br => "https://api.github.com/repos/Dicklesworthstone/beads_rust/releases/latest",
-        _ => "https://api.github.com/repos/steveyegge/beads/releases/latest",
-    };
-    let releases_url = match client_type {
-        CliClient::Br => "https://github.com/Dicklesworthstone/beads_rust/releases",
-        _ => "https://github.com/steveyegge/beads/releases",
-    };
+    let api_url = "https://api.github.com/repos/Dicklesworthstone/beads_rust/releases/latest";
+    let releases_url = "https://github.com/Dicklesworthstone/beads_rust/releases";
 
     let client = github_client()?;
 
@@ -3820,75 +2703,13 @@ async fn get_bd_version() -> String {
     {
         Ok(output) if output.status.success() => {
             let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if binary != "bd" {
+            if binary != "br" {
                 format!("{} ({})", version, binary)
             } else {
                 version
             }
         }
         _ => format!("{} not found", binary),
-    }
-}
-
-#[derive(Debug, Serialize)]
-struct CompatibilityInfo {
-    version: String,
-    /// "bd", "br", or "unknown"
-    #[serde(rename = "clientType")]
-    client_type: String,
-    #[serde(rename = "versionTuple")]
-    version_tuple: Option<Vec<u32>>,
-    #[serde(rename = "supportsDaemonFlag")]
-    supports_daemon_flag: bool,
-    #[serde(rename = "usesJsonlFiles")]
-    uses_jsonl_files: bool,
-    #[serde(rename = "usesDoltBackend")]
-    uses_dolt_backend: bool,
-    #[serde(rename = "supportsListAllFlag")]
-    supports_list_all_flag: bool,
-    warnings: Vec<String>,
-}
-
-#[tauri::command]
-async fn check_bd_compatibility() -> CompatibilityInfo {
-    let version_string = get_bd_version().await;
-    let info = get_cli_client_info();
-
-    let mut warnings = Vec::new();
-
-    let (client, tuple) = match info {
-        Some((client, major, minor, patch)) => (client, Some((major, minor, patch))),
-        None => {
-            warnings.push(format!("Could not detect CLI client from: {}", version_string));
-            (CliClient::Unknown, None)
-        }
-    };
-
-    let client_type_str = match client {
-        CliClient::Bd => "bd",
-        CliClient::Br => "br",
-        CliClient::Unknown => "unknown",
-    };
-
-    if client == CliClient::Br {
-        warnings.push("br (beads_rust) detected: frozen on classic SQLite+JSONL architecture, no daemon support".to_string());
-    }
-
-    if let Some((major, minor, _)) = tuple {
-        if client == CliClient::Bd && major == 0 && minor >= 50 {
-            warnings.push("bd >= 0.50.0 detected: daemon and JSONL systems have been removed".to_string());
-        }
-    }
-
-    CompatibilityInfo {
-        version: version_string,
-        client_type: client_type_str.to_string(),
-        version_tuple: tuple.map(|(a, b, c)| vec![a, b, c]),
-        supports_daemon_flag: supports_daemon_flag(),
-        uses_jsonl_files: uses_jsonl_files(),
-        uses_dolt_backend: uses_dolt_backend(),
-        supports_list_all_flag: supports_list_all_flag(),
-        warnings,
     }
 }
 
@@ -3903,14 +2724,13 @@ async fn get_cli_binary_path() -> String {
 
 #[tauri::command]
 async fn set_cli_binary_path(path: String) -> Result<String, String> {
-    let binary = if path.trim().is_empty() { "bd".to_string() } else { path.trim().to_string() };
+    let binary = if path.trim().is_empty() { "br".to_string() } else { path.trim().to_string() };
 
     // Validate the binary first
     let version = validate_cli_binary_internal(&binary)?;
 
-    // Update global state and reset version cache (new binary may be different version)
+    // Update global state
     *CLI_BINARY.lock().unwrap() = binary.clone();
-    reset_bd_version_cache();
 
     // Persist to config file
     let mut config = load_config();
@@ -3923,7 +2743,7 @@ async fn set_cli_binary_path(path: String) -> Result<String, String> {
 
 #[tauri::command]
 async fn validate_cli_binary(path: String) -> Result<String, String> {
-    let binary = if path.trim().is_empty() { "bd".to_string() } else { path.trim().to_string() };
+    let binary = if path.trim().is_empty() { "br".to_string() } else { path.trim().to_string() };
     validate_cli_binary_internal(&binary)
 }
 
@@ -4136,7 +2956,7 @@ async fn purge_orphan_attachments(project_path: String) -> Result<PurgeResult, S
         });
     }
 
-    // Get list of all existing issue IDs via bd list --all
+    // Get list of all existing issue IDs via br list --all
     let existing_ids: std::collections::HashSet<String> = {
         let output = execute_bd("list", &["--all".to_string(), "--limit=0".to_string()], Some(&abs_project_path.to_string_lossy()))?;
         let issues = parse_issues_tolerant(&output, "purge_orphan_attachments")?;
@@ -4887,10 +3707,10 @@ fn start_watching(
     ).map_err(|e| format!("Failed to create watcher: {}", e))?;
 
     // Watch each registry present. Grace artifacts nest (changes/<id>/records/...),
-    // so .grace5 is always recursive; .beads is recursive only on the Dolt backend.
+    // so .grace5 is recursive; br's .beads store is flat, so it is non-recursive.
     for target in &targets {
         let is_grace = target.file_name().and_then(|name| name.to_str()) == Some(".grace5");
-        let watch_mode = if is_grace || project_uses_dolt(target) {
+        let watch_mode = if is_grace {
             notify::RecursiveMode::Recursive
         } else {
             notify::RecursiveMode::NonRecursive
@@ -5172,7 +3992,7 @@ pub fn run() {
             log::info!("=== Beads Task-Issue Tracker starting ===");
             log::info!("[startup] Extended PATH: {}", get_extended_path());
 
-            // Load config and set CLI binary (auto-detects br→bd if no config exists)
+            // Load config and set the CLI binary (br by default)
             let config = load_config();
             log::info!("[startup] CLI binary: {}", config.cli_binary);
             *CLI_BINARY.lock().unwrap() = config.cli_binary.clone();
@@ -5182,9 +4002,6 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             bd_sync,
             bd_repair_database,
-            bd_migrate_to_dolt,
-            bd_check_needs_migration,
-            bd_cleanup_stale_locks,
             bd_check_changed,
             bd_reset_mtime,
             bd_poll_data,
@@ -5204,7 +4021,6 @@ pub fn run() {
             get_log_path_string,
             log_frontend,
             get_bd_version,
-            check_bd_compatibility,
             get_cli_binary_path,
             set_cli_binary_path,
             validate_cli_binary,

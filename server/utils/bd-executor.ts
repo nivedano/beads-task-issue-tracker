@@ -33,8 +33,9 @@ export function unwrapBrEnvelope<T = unknown>(data: unknown): T[] {
 }
 
 /**
- * Execute a bd CLI command and return JSON output
- * @param command - The bd command to execute
+ * Execute a br CLI command and return JSON output.
+ * br is the only supported client.
+ * @param command - The br command to execute
  * @param options - Options including args and working directory
  */
 export async function executeBd<T = unknown>(
@@ -44,7 +45,7 @@ export async function executeBd<T = unknown>(
   // Priority: options.cwd > BEADS_PATH env > process.cwd()
   const workingDir = options.cwd || process.env.BEADS_PATH || process.cwd()
   const args = options.args?.join(' ') || ''
-  const fullCommand = `bd ${command} ${args} --json`.trim()
+  const fullCommand = `br ${command} ${args} --json`.trim()
 
   try {
     const { stdout, stderr } = await execAsync(fullCommand, {

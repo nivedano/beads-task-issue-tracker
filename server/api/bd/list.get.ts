@@ -5,7 +5,7 @@ import type { BdRawIssue } from '../../utils/bd-transformers'
 export default defineEventHandler(async (event) => {
   const query = getQuery(event)
 
-  // Convert priority from "p3" format to "3" format for bd CLI
+  // Convert priority from "p3" format to "3" format for br CLI
   const priorityFilters = query.priority
     ? String(query.priority).split(',').map(priorityToNumber)
     : undefined

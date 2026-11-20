@@ -69,7 +69,6 @@ const { filters, toggleStatus, toggleType, togglePriority, toggleAssignee, clear
 const { columns, toggleColumn, setColumns, resetColumns } = useColumnConfig()
 const { beadsPath, hasStoredPath } = useBeadsPath()
 const { success: notifySuccess, error: notifyError } = useNotification()
-const { init: initCliClient } = useCliClient()
 const { projects } = useProjects()
 const {
   issues,
@@ -119,7 +118,6 @@ const {
 const { check: checkForUpdates, startPeriodicCheck, stopPeriodicCheck } = useUpdateChecker()
 const { showDebugPanel, showSettingsDialog } = useAppMenu()
 const { needsRepair, affectedProject, isRepairing, repairError, repairProgress, repair: repairDatabase, repairAll, dismiss: dismissRepair } = useRepairDatabase()
-const { needsMigration, affectedProject: migrateAffectedProject, isMigrating, migrateError, migrate: migrateToDolt, checkProject: checkMigrationNeeded, dismiss: dismissMigration } = useMigrateToDolt()
 const { needsMigration: needsRefsMigration, refCount: refsRefCount, isMigrating: isRefsMigrating, migrateError: refsMigrateError, checkProject: checkRefsMigration, migrate: migrateRefs, dismiss: dismissRefsMigration } = useMigrateRefs()
 
 // Sidebar resize
@@ -166,7 +164,7 @@ const showOnboarding = computed(() => {
 
 // Registry capabilities: `.beads` powers the issue explorer, `.grace5` the GRACE
 // explorer. Probed BEFORE any fetch decision so a grace-only (or empty) folder
-// never triggers a bd/git command.
+// never triggers a CLI/git command.
 const caps = ref<{ hasBeads: boolean, hasGrace: boolean }>({ hasBeads: false, hasGrace: false })
 // True once the current project has been probed. Until then the dashboard stays
 // on "Loading..." instead of claiming the folder has no registry.
@@ -441,7 +439,7 @@ const { showErrorDialog: showSyncErrorDialog, lastSyncError, closeErrorDialog: c
 // 1. Native file watcher (0 CPU when idle, instant detection)
 // 2. Poll scheduler backpressure (min 2s between expensive cycles)
 // 3. Sync cooldown (Rust backend skips redundant syncs within 10s)
-// 4. Filesystem mtime check as fallback (zero bd processes if nothing changed)
+// 4. Filesystem mtime check as fallback (zero CLI processes if nothing changed)
 // 5. Batched poll command (1 IPC call instead of 3 when changes detected)
 // 6. Adaptive intervals (30s safety net when watcher active, 5s/1s fallback without watcher)
 const isSyncing = ref(false)
@@ -489,7 +487,7 @@ const pollForChanges = async () => {
         updateFromPollData(issues.value, readyData)
       }
 
-      // Snapshot mtime AFTER all operations (including epic bd_show calls in fetchPollData)
+      // Snapshot mtime AFTER all operations (including epic show calls in fetchPollData)
       // so the next check ignores changes caused by our own poll cycle
       await bdCheckChanged(apiPath)
 
@@ -497,7 +495,7 @@ const pollForChanges = async () => {
       notifySelfWrite()
     }
 
-    // GRACE refreshes on its own fingerprint; it never runs bd/git commands.
+    // GRACE refreshes on its own fingerprint; it never runs the CLI or git.
     if (caps.value.hasGrace) {
       await refreshGraceIfChanged(path)
     }
@@ -573,11 +571,7 @@ onMounted(async () => {
     window.addEventListener('resize', checkViewport)
     window.addEventListener('keydown', handleGlobalShortcut, true)
 
-    // Detect CLI client (br vs bd) for feature gating
-    await initCliClient()
-
     // Check for updates after initial load + start periodic check (hourly)
-    // (these don't call bd CLI, safe to run before migration check)
     checkForUpdates()
     startPeriodicCheck()
   }
@@ -588,50 +582,44 @@ onMounted(async () => {
     await probeCapabilities(beadsPath.value)
 
     if (caps.value.hasBeads) {
-      // Check migration BEFORE any bd command — bd >= 0.52 auto-migrates on any
-      // bd call (like `bd list`, `bd mtime`), which would bypass our migration modal
-      // that preserves labels, deps, comments, and attachments.
-      const migrationNeeded = await checkMigrationNeeded()
-      if (!migrationNeeded) {
-        if (import.meta.client) {
-          // Start change detection — native file watcher
-          if (beadsPath.value) {
-            startListening(beadsPath.value)
-          }
-
-          // Start adaptive polling (handles visibility, focus, idle internally)
-          // When change detection is active, polling uses 30s safety-net instead of 1s mtime checks
-          startPolling()
-
-          // Fetch available relation types + detect bd >= 0.50 for dot-notation parent-child
-          initRelationTypes()
-        }
-        // Auto-launch probe if enabled (must complete before fetch)
-        await launchProbeIfNeeded()
-        // Auto-register with probe if enabled (fire-and-forget, never blocks UI)
-        ensureProbeRegistration(beadsPath.value)
-
-        // Check attachment refs migration (may have been auto-migrated before sync)
-        const migrationResult = await checkRefsMigration()
-        if (migrationResult === 'just_migrated') {
-          notifySuccess('Attachments migrated', 'Attachment references and folders have been updated to the new format.')
-        } else if (migrationResult) {
-          await migrateRefs()
-          notifySuccess('Attachments migrated', 'Attachment references and folders have been updated to the new format.')
+      if (import.meta.client) {
+        // Start change detection — native file watcher
+        if (beadsPath.value) {
+          startListening(beadsPath.value)
         }
 
-        // Sequential: bd commands can't run concurrently (Dolt SIGSEGV on parallel access)
-        fetchIssues().then(() => fetchStats(issues.value))
+        // Start adaptive polling (handles visibility, focus, idle internally)
+        // When change detection is active, polling uses 30s safety-net instead of 1s mtime checks
+        startPolling()
+
+        // Fetch available relation types
+        initRelationTypes()
       }
+      // Auto-launch probe if enabled (must complete before fetch)
+      await launchProbeIfNeeded()
+      // Auto-register with probe if enabled (fire-and-forget, never blocks UI)
+      ensureProbeRegistration(beadsPath.value)
+
+      // Check attachment refs migration (may have been auto-migrated before sync)
+      const migrationResult = await checkRefsMigration()
+      if (migrationResult === 'just_migrated') {
+        notifySuccess('Attachments migrated', 'Attachment references and folders have been updated to the new format.')
+      } else if (migrationResult) {
+        await migrateRefs()
+        notifySuccess('Attachments migrated', 'Attachment references and folders have been updated to the new format.')
+      }
+
+      // Sequential: CLI commands must not overlap on the same project store
+      fetchIssues().then(() => fetchStats(issues.value))
     }
 
-    // GRACE is independent of the beads migration state — it never runs bd/git.
+    // GRACE is independent of beads — it never runs the CLI or git.
     if (caps.value.hasGrace) {
       await fetchGraceChanges(beadsPath.value)
     }
 
-    // Grace-only projects still need live refresh; beads-only startup above is
-    // unchanged (it starts the watcher only when no migration is pending).
+    // Grace-only projects still need live refresh; beads-only startup above
+    // starts the watcher for beads projects.
     if (import.meta.client && !caps.value.hasBeads && caps.value.hasGrace && beadsPath.value) {
       startListening(beadsPath.value)
       startPolling()
@@ -661,7 +649,7 @@ const {
   handleDeleteIssue, handleCloseIssue, handleReopenIssue,
   handleAttachImage, confirmDetachImage,
   confirmRemoveDependency, openAddBlockerDialog, openAddRelationDialog, confirmRemoveRelation,
-  bdDotNotationParent, availableIssuesForDeps, initRelationTypes,
+  availableIssuesForDeps, initRelationTypes,
 } = useIssueDialogs()
 
 const leftSidebarStateBeforeEdit = ref<boolean | null>(null)
@@ -724,26 +712,6 @@ const handleRepairAll = async () => {
   }
 }
 
-const handleMigrateToDolt = async () => {
-  const success = await migrateToDolt()
-  if (success) {
-    notifySuccess('Migration complete', 'Project has been migrated to the Dolt backend.')
-
-    // Start change detection + polling that were deferred during migration
-    if (import.meta.client) {
-      if (beadsPath.value) {
-        await startListening(beadsPath.value)
-      }
-      startPolling()
-      initRelationTypes()
-    }
-
-    // Reload data after migration
-    await fetchIssues()
-    await fetchStats(issues.value)
-  }
-}
-
 const handleMigrateRefs = async () => {
   const success = await migrateRefs()
   if (success) {
@@ -782,7 +750,7 @@ const handlePathChange = async () => {
   skipMtimeCheck = false
 
   // Stop polling + change detection during project switch to prevent:
-  // 1. Concurrent bd calls from old project's poll cycle
+  // 1. Concurrent CLI calls from old project's poll cycle
   // 2. Change detection events triggering stale refreshes
   stopPolling()
   await stopListening()
@@ -793,7 +761,7 @@ return
   }
 
   // Which registries this project has — decided BEFORE any fetch so a grace-only
-  // project never touches bd/git (and a probe failure simply means "no registries").
+  // project never touches the CLI or git (and a probe failure simply means "no registries").
   await probeCapabilities(beadsPath.value)
 
   if (thisGeneration !== pathChangeGeneration) {
@@ -805,53 +773,42 @@ return
     mobilePanel.value = 'issues'
   }
 
-  let migrationBlocked = false
-
   try {
     if (caps.value.hasBeads) {
-      // Pre-flight checks in parallel: cleanup stale locks + migration check + mtime reset
-const [, , migrationNeeded] = await Promise.all([
-        bdCleanupStaleLocks(beadsPath.value),
-        bdResetMtime(),
-        checkMigrationNeeded(),
-      ])
+      // Reset the cached mtime so the new project gets a fresh poll
+      await bdResetMtime()
 
       if (thisGeneration !== pathChangeGeneration) {
 return
       }
 
-if (!migrationNeeded) {
-        // Register new project with probe before fetching (probe needs to know the project)
-        await ensureProbeRegistration(beadsPath.value)
+      // Register new project with probe before fetching (probe needs to know the project)
+      await ensureProbeRegistration(beadsPath.value)
 
-        if (thisGeneration !== pathChangeGeneration) {
+      if (thisGeneration !== pathChangeGeneration) {
 return
-        }
-
-        // Check attachment refs migration (may have been auto-migrated before sync)
-        const migrationResult2 = await checkRefsMigration()
-        if (migrationResult2 === 'just_migrated') {
-          notifySuccess('Attachments migrated', 'Attachment references and folders have been updated to the new format.')
-        } else if (migrationResult2) {
-          await migrateRefs()
-          notifySuccess('Attachments migrated', 'Attachment references and folders have been updated to the new format.')
-        }
-
-        // IMPORTANT: bd commands must run sequentially — concurrent Dolt embedded access
-        // causes SIGSEGV crashes (nil pointer dereference in dolthub/driver).
-        await fetchIssues()
-        // Fire-and-forget: stats update doesn't block issue list display
-        fetchStats(issues.value)
-      } else {
-        migrationBlocked = true
       }
+
+      // Check attachment refs migration (may have been auto-migrated before sync)
+      const migrationResult2 = await checkRefsMigration()
+      if (migrationResult2 === 'just_migrated') {
+        notifySuccess('Attachments migrated', 'Attachment references and folders have been updated to the new format.')
+      } else if (migrationResult2) {
+        await migrateRefs()
+        notifySuccess('Attachments migrated', 'Attachment references and folders have been updated to the new format.')
+      }
+
+      // IMPORTANT: CLI commands must run sequentially against the same project store.
+      await fetchIssues()
+      // Fire-and-forget: stats update doesn't block issue list display
+      fetchStats(issues.value)
     }
 
     if (thisGeneration !== pathChangeGeneration) {
 return
     }
 
-    // GRACE never runs bd/git and does not wait on a beads migration.
+    // GRACE never runs the CLI or git.
     if (caps.value.hasGrace) {
       await fetchGraceChanges(beadsPath.value)
     }
@@ -864,13 +821,12 @@ return
 return
   }
 
-  // A pending beads migration keeps the old "Loading…" surface behind its dialog.
-  if (!migrationBlocked) isLoading.value = false
+  isLoading.value = false
 
   // Resume change detection + polling AFTER data is loaded (avoids self-triggered cascade)
   if (beadsPath.value && (caps.value.hasBeads || caps.value.hasGrace)) {
     await startListening(beadsPath.value)
-    notifySelfWrite()  // Arm cooldown so backend ignores bd's recent .beads/ writes
+    notifySelfWrite()  // Arm cooldown so backend ignores the CLI's recent .beads/ writes
   }
   startPolling()
 }
@@ -1174,7 +1130,7 @@ const handleKpiClick = (kpi: KpiFilter) => {
 watch(
   () => JSON.stringify([filters.value.status, filters.value.type, filters.value.priority]),
   () => {
-    // Grace-only projects render no issues panel: never issue a bd command.
+    // Grace-only projects render no issues panel: never issue a CLI command.
     if (!caps.value.hasBeads) return
     // Don't refetch if search is active (search ignores filters)
     if (!filters.value.search?.trim()) {
@@ -1492,7 +1448,6 @@ watch(
               :available-epics="availableEpics"
               :available-labels="availableLabels"
               :default-parent="defaultParent"
-              :dot-notation-parent="bdDotNotationParent"
               @save="handleSaveIssue"
               @cancel="handleCancelEdit"
             />
@@ -1848,7 +1803,7 @@ watch(
           </DialogTitle>
           <DialogDescription class="text-left space-y-3 pt-2">
             <p>
-              A database schema incompatibility was detected. This is caused by a bug in the bd CLI update (version 0.49.4).
+              A database schema incompatibility was detected.
             </p>
             <p v-if="affectedProject" class="text-sm bg-muted p-2 rounded font-mono break-all">
               {{ affectedProject }}
@@ -1890,52 +1845,6 @@ watch(
               {{ isRepairing && !repairProgress ? 'Repairing...' : 'Repair This Project' }}
             </Button>
           </div>
-        </div>
-      </DialogContent>
-    </Dialog>
-
-    <!-- Dolt Migration Dialog -->
-    <Dialog :open="needsMigration" @update:open="(open) => !open && dismissMigration()">
-      <DialogContent class="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle class="flex items-center gap-2 text-amber-500">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-            </svg>
-            Database Migration Required
-          </DialogTitle>
-          <DialogDescription class="text-left space-y-3 pt-2">
-            <p>
-              Your bd version (>= 0.50) can no longer read previous SQLite databases.
-              This project needs to be migrated to the new Dolt backend. This is a one-time operation.
-            </p>
-            <p v-if="migrateAffectedProject" class="text-sm bg-muted p-2 rounded font-mono break-all">
-              {{ migrateAffectedProject }}
-            </p>
-            <p>
-              <strong>What will happen:</strong>
-            </p>
-            <ul class="list-disc list-inside text-sm space-y-1 ml-2">
-              <li>A new Dolt database will be created (<code class="text-xs">bd init</code>)</li>
-              <li>Your issues will be imported from the JSONL backup file (<code class="text-xs">bd import</code>)</li>
-              <li>None of your active issues will be lost during migration</li>
-            </ul>
-            <p v-if="migrateError" class="text-destructive text-sm">
-              Error: {{ migrateError }}
-            </p>
-          </DialogDescription>
-        </DialogHeader>
-        <div class="flex justify-end gap-2 mt-4">
-          <Button variant="outline" :disabled="isMigrating" @click="dismissMigration">
-            Later
-          </Button>
-          <Button :disabled="isMigrating" class="bg-[#29E3C1] hover:bg-[#22c9aa] text-black" @click="handleMigrateToDolt">
-            <svg v-if="isMigrating" class="animate-spin -ml-1 mr-2 h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-            </svg>
-            {{ isMigrating ? 'Migrating...' : 'Migrate Now' }}
-          </Button>
         </div>
       </DialogContent>
     </Dialog>

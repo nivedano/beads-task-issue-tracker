@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
 import type { Issue, ChildIssue } from '~/types/issue'
-import { bdAvailableRelationTypes, checkBdCompatibility } from '~/utils/bd-api'
+import { bdAvailableRelationTypes } from '~/utils/bd-api'
 
 // Singleton state — shared across all callers
 
@@ -38,8 +38,6 @@ const isRemovingDep = ref(false)
 
 // Relation types (fetched once on mount)
 const availableRelationTypes = ref<Array<{ value: string; label: string }>>([])
-// bd >= 0.50: parent-child is structural via dot notation (not explicit field)
-const bdDotNotationParent = ref(false)
 
 // Add relation dialog
 const isAddRelDialogOpen = ref(false)
@@ -483,7 +481,6 @@ export function useIssueDialogs() {
   // Init relation types (called from onMounted)
   const initRelationTypes = () => {
     bdAvailableRelationTypes().then(types => { availableRelationTypes.value = types }).catch(() => {})
-    checkBdCompatibility().then(info => { bdDotNotationParent.value = info.usesDoltBackend }).catch(() => {})
   }
 
   return {
@@ -534,7 +531,6 @@ export function useIssueDialogs() {
 
     // Relation types
     availableRelationTypes,
-    bdDotNotationParent,
 
     // Add blocker dialog
     isAddBlockerDialogOpen,
