@@ -169,4 +169,20 @@ describe('useGrace', () => {
     expect(grace.detail.value?.summary.stage).toBe('executing')
     expect(graceShow).toHaveBeenLastCalledWith('/project', 'C-0001')
   })
+
+  it('reports a failed list fetch as not refreshed and keeps the list error', async () => {
+    const { grace, graceList, graceShow, graceCheckChanged } = await loadGrace()
+    const selected = change('C-0001')
+    graceShow.mockResolvedValueOnce(detail(selected))
+    await grace.selectChange('/project', selected)
+    graceShow.mockClear()
+
+    graceCheckChanged.mockResolvedValue(true)
+    graceList.mockRejectedValueOnce(new Error('grace_list exploded'))
+
+    await expect(grace.refreshIfChanged('/project')).resolves.toBe(false)
+    expect(grace.error.value).toBe('grace_list exploded')
+    expect(graceShow).not.toHaveBeenCalled()
+    expect(grace.selectedChange.value?.id).toBe('C-0001')
+  })
 })

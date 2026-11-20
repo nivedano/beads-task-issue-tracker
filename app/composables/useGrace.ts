@@ -54,23 +54,31 @@ const filteredChanges = computed(() =>
 
 const stats = computed(() => graceStats(changes.value))
 
-async function fetchChanges(path: string): Promise<void> {
+type FetchOutcome = 'committed' | 'superseded' | 'failed'
+
+async function runFetchChanges(path: string): Promise<FetchOutcome> {
   const generation = ++listGeneration
   isLoading.value = true
   error.value = null
 
   try {
     const result = await graceList(path)
-    if (generation !== listGeneration) return
+    if (generation !== listGeneration) return 'superseded'
     listResult.value = result
     changes.value = result.changes
+    return 'committed'
   } catch (e) {
-    if (generation !== listGeneration) return
+    if (generation !== listGeneration) return 'superseded'
     // Keep the last known changes on failure; the error surfaces in the panel.
     error.value = e instanceof Error ? e.message : 'Failed to load GRACE changes'
+    return 'failed'
   } finally {
     if (generation === listGeneration) isLoading.value = false
   }
+}
+
+async function fetchChanges(path: string): Promise<void> {
+  await runFetchChanges(path)
 }
 
 async function selectChange(path: string, change: GraceChangeSummary | null): Promise<void> {
@@ -102,8 +110,9 @@ async function selectChange(path: string, change: GraceChangeSummary | null): Pr
 
 /**
  * Cheap fingerprint check; refreshes the list and the selected detail when stale.
- * Returns true only when the refresh actually committed — a project switch or
- * `clear()` landing mid-flight discards it and returns false.
+ * Returns true only when the fingerprint changed AND this refresh's list fetch
+ * committed — a superseded fetch or a failed one returns false, so a failed
+ * refresh never reports success and never touches the selection (its error stays).
  */
 async function refreshIfChanged(path: string): Promise<boolean> {
   const startedAt = listGeneration
@@ -117,14 +126,11 @@ async function refreshIfChanged(path: string): Promise<boolean> {
   }
 
   if (!changed) return false
-  // The project changed while the fingerprint was in flight: this refresh
-  // belongs to a project that is no longer displayed.
+  // Superseded by clear() or a newer fetch while the fingerprint check ran.
   if (startedAt !== listGeneration) return false
 
-  await fetchChanges(path)
-  // Our fetch took generation `startedAt + 1`. Anything else means a newer
-  // fetch or `clear()` superseded it, so it never committed.
-  if (listGeneration !== startedAt + 1) return false
+  const outcome = await runFetchChanges(path)
+  if (outcome !== 'committed') return false
 
   const selected = selectedChange.value
   if (selected) {
