@@ -12,8 +12,8 @@ pub const MAX_READ_BYTES: usize = 1024 * 1024;
 
 /// Reads at most `MAX_READ_BYTES` from a file without loading the rest of it.
 fn capped_bytes(path: &Path) -> std::io::Result<(Vec<u8>, bool, u64)> {
-    let file = fs::File::open(path)?;
-    let metadata = file.metadata()?;
+    // Check the type before opening: opening a FIFO would block on Unix.
+    let metadata = fs::metadata(path)?;
     if !metadata.is_file() {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
@@ -21,6 +21,7 @@ fn capped_bytes(path: &Path) -> std::io::Result<(Vec<u8>, bool, u64)> {
         ));
     }
     let size = metadata.len();
+    let file = fs::File::open(path)?;
     let mut buffer = Vec::with_capacity(size.min(MAX_READ_BYTES as u64) as usize);
     file.take(MAX_READ_BYTES as u64).read_to_end(&mut buffer)?;
     Ok((buffer, size > MAX_READ_BYTES as u64, size))
@@ -218,6 +219,16 @@ mod tests {
         std::os::windows::fs::symlink_file(target, link)
     }
 
+    #[cfg(unix)]
+    fn symlink_dir(target: &Path, link: &Path) -> std::io::Result<()> {
+        std::os::unix::fs::symlink(target, link)
+    }
+
+    #[cfg(windows)]
+    fn symlink_dir(target: &Path, link: &Path) -> std::io::Result<()> {
+        std::os::windows::fs::symlink_dir(target, link)
+    }
+
     fn write_contract(dir: &Path, src: &[u8]) {
         fs::create_dir_all(dir).unwrap();
         fs::write(dir.join("contract.xml"), src).unwrap();
@@ -382,6 +393,56 @@ mod tests {
             "C-9999-unknown".to_string(),
         );
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn refuses_a_directory_target() {
+        let dir = TempDir::new("dir-target");
+        fs::create_dir_all(dir.path().join(".grace5").join("folder")).unwrap();
+        assert!(read_grace_file(dir.path(), "folder").is_err());
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn refuses_a_fifo_without_blocking() {
+        let dir = TempDir::new("fifo");
+        let pipe = dir.path().join(".grace5").join("pipe");
+        fs::create_dir_all(pipe.parent().unwrap()).unwrap();
+        let created = std::process::Command::new("mkfifo")
+            .arg(&pipe)
+            .status()
+            .map(|status| status.success())
+            .unwrap_or(false);
+        if !created {
+            eprintln!("skipping fifo test: mkfifo unavailable");
+            return;
+        }
+        assert!(read_grace_file(dir.path(), "pipe").is_err());
+    }
+
+    #[test]
+    fn refuses_a_changes_directory_symlinked_outside_grace() {
+        let dir = TempDir::new("changes-escape");
+        let project = dir.path().join("project");
+        let outside = dir.path().join("outside");
+        fs::create_dir_all(project.join(".grace5")).unwrap();
+        write_contract(
+            &outside.join("C-0001-outside"),
+            br#"<Contract id="C-0001-outside" revision="1" title="Outside"><Problem>p</Problem></Contract>"#,
+        );
+        let changes = project.join(".grace5").join("changes");
+        if symlink_dir(&outside, &changes).is_err() {
+            eprintln!("skipping: this platform cannot create a directory symlink here");
+            return;
+        }
+        let result = crate::grace::grace_show(
+            project.to_string_lossy().to_string(),
+            "C-0001-outside".to_string(),
+        );
+        assert!(
+            result.is_err(),
+            "a changes/ directory outside .grace5 must be refused"
+        );
     }
 
     #[test]

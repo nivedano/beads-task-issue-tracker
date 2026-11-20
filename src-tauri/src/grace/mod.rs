@@ -106,7 +106,11 @@ fn latest_results(contract: Option<&GraceContract>, runs: &[GraceRun]) -> Vec<Gr
 /// normal path component inside `changes/` or `changes/closed/`.
 fn change_dir(project: &Path, id: &str) -> Result<(PathBuf, bool), String> {
     validate_change_id(id)?;
-    let changes = project.join(".grace5").join("changes");
+    let grace_dir = project.join(".grace5");
+    let canonical_grace = grace_dir
+        .canonicalize()
+        .map_err(|error| format!("Cannot resolve .grace5: {error}"))?;
+    let changes = grace_dir.join("changes");
     let canonical_changes = changes
         .canonicalize()
         .map_err(|error| format!("Cannot resolve .grace5/changes: {error}"))?;
@@ -125,7 +129,11 @@ fn change_dir(project: &Path, id: &str) -> Result<(PathBuf, bool), String> {
         let Ok(resolved) = candidate.canonicalize() else {
             continue;
         };
-        if resolved.parent() != Some(expected_parent.as_path()) {
+        // The change must live inside this project's .grace5 (a symlinked
+        // changes/ pointing elsewhere is refused) and directly in its parent.
+        if !resolved.starts_with(&canonical_grace)
+            || resolved.parent() != Some(expected_parent.as_path())
+        {
             continue;
         }
         return Ok((resolved, in_closed_dir));
