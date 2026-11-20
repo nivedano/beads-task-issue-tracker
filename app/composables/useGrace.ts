@@ -5,6 +5,7 @@
  * `~/utils/grace-helpers`, IPC in `~/utils/bd-api`. A generation guard keeps
  * late responses from a previous project or selection out of the refs.
  */
+import { ref, reactive, computed } from 'vue'
 import type { GraceStage, GraceAuthorization, GraceChangeSummary, GraceChangeDetail, GraceListResult } from '~/types/grace'
 import { graceList, graceShow, graceCheckChanged } from '~/utils/bd-api'
 import { filterGraceChanges, sortGraceChanges, graceStats, type GraceFilters } from '~/utils/grace-helpers'
@@ -26,7 +27,7 @@ const search = useProjectStorage<string>('grace:search', '')
 const stageFilter = useProjectStorage<GraceStage[]>('grace:filters:stage', [])
 const authorizationFilter = useProjectStorage<GraceAuthorization[]>('grace:filters:authorization', [])
 const scopeFilter = useProjectStorage<'open' | 'closed' | 'all'>('grace:filters:scope', 'open')
-const sort = useProjectStorage<GraceSort>('grace:sort', { field: 'id', direction: 'desc' })
+const sort = useProjectStorage<Readonly<GraceSort>>('grace:sort', { field: 'id', direction: 'desc' })
 
 // Two-way facade so components can assign `filters.stage = [...]` and still
 // persist through the individual storage refs.
@@ -99,8 +100,14 @@ async function selectChange(path: string, change: GraceChangeSummary | null): Pr
   }
 }
 
-/** Cheap fingerprint check; refreshes the list and the selected detail when stale. */
+/**
+ * Cheap fingerprint check; refreshes the list and the selected detail when stale.
+ * Returns true only when the refresh actually committed — a project switch or
+ * `clear()` landing mid-flight discards it and returns false.
+ */
 async function refreshIfChanged(path: string): Promise<boolean> {
+  const startedAt = listGeneration
+
   let changed: boolean
   try {
     changed = await graceCheckChanged(path)
@@ -110,8 +117,14 @@ async function refreshIfChanged(path: string): Promise<boolean> {
   }
 
   if (!changed) return false
+  // The project changed while the fingerprint was in flight: this refresh
+  // belongs to a project that is no longer displayed.
+  if (startedAt !== listGeneration) return false
 
   await fetchChanges(path)
+  // Our fetch took generation `startedAt + 1`. Anything else means a newer
+  // fetch or `clear()` superseded it, so it never committed.
+  if (listGeneration !== startedAt + 1) return false
 
   const selected = selectedChange.value
   if (selected) {
