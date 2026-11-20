@@ -145,9 +145,9 @@ watch(() => props.detail?.summary.id, () => {
 
     <template v-else-if="summary">
       <div class="p-4 border-b border-border space-y-3">
-        <div class="flex items-start justify-between gap-3">
+        <div class="group flex items-start justify-between gap-3">
           <div class="space-y-1 min-w-0">
-            <CopyableId :value="summary.id" />
+            <CopyableId :value="summary.id" hover-icon />
             <span class="ml-2 text-[10px] text-muted-foreground">
               revision {{ summary.revision ?? '—' }}
             </span>

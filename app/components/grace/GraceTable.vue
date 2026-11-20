@@ -14,6 +14,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '~/components/ui/tooltip'
+import { CopyableId } from '~/components/ui/copyable-id'
 import GraceStageBadge from '~/components/grace/GraceStageBadge.vue'
 import GraceAuthorizationBadge from '~/components/grace/GraceAuthorizationBadge.vue'
 
@@ -121,7 +122,7 @@ const toggleSort = (columnId: string) => {
           v-for="change in changes"
           :key="`${change.id}:${change.inClosedDir ? 'closed' : 'open'}`"
           :data-grace-id="change.id"
-          class="cursor-pointer"
+          class="cursor-pointer group"
           :class="[
             selectedId === change.id ? 'bg-accent/50 hover:bg-accent/70' : 'hover:bg-muted/50',
             isFocused(change.id) ? 'bg-primary/10 ring-1 ring-inset ring-primary/40' : '',
@@ -153,7 +154,11 @@ const toggleSort = (columnId: string) => {
                       <p class="text-xs max-w-xs">{{ change.malformed }}</p>
                     </TooltipContent>
                   </Tooltip>
-                  <span class="font-mono whitespace-nowrap">{{ change.id }}</span>
+                  <CopyableId
+                    :value="change.id"
+                    hover-icon
+                    class="text-xs text-foreground whitespace-nowrap"
+                  />
                 </div>
               </template>
 
