@@ -224,7 +224,10 @@ const openFolderPicker = () => {
 
 const handleOnboardingFolderSelect = async (path: string) => {
   setPath(path)
-  await probeCapabilities(path)
+  // setPath normalizes the path; probe and every command below must use the same
+  // spelling the rest of the app (and the watcher) will see.
+  const projectPath = beadsPath.value
+  await probeCapabilities(projectPath)
 
   if (caps.value.hasBeads) {
     await fetchIssues()
@@ -235,17 +238,17 @@ const handleOnboardingFolderSelect = async (path: string) => {
   }
 
   if (caps.value.hasGrace) {
-    await fetchGraceChanges(path)
+    await fetchGraceChanges(projectPath)
   }
 
   // A project admitted from onboarding gets the same live refresh as one opened
   // through the project switcher: the Rust watcher covers `.beads` and `.grace5`.
   if (import.meta.client && (caps.value.hasBeads || caps.value.hasGrace)) {
-    startListening(path)
+    startListening(projectPath)
     startPolling()
   }
 
-  previousBeadsPath = path
+  previousBeadsPath = projectPath
 }
 
 // Edit context for header

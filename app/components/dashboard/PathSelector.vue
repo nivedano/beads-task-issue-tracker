@@ -34,8 +34,13 @@ const projectCapabilities = ref<Record<string, { hasBeads: boolean; hasGrace: bo
 async function capabilitiesFor(path: string): Promise<{ hasBeads: boolean; hasGrace: boolean }> {
   // `.` is the legacy default path (see index.vue's probeCapabilities): probing
   // it is meaningless, and treating it as a beads project keeps the count badge
-  // working for default-path users.
-  if (path === '.') return { hasBeads: true, hasGrace: false }
+  // working for default-path users. Cached like a probe result so the
+  // current-project count mirror (which requires known capabilities) works too.
+  if (path === '.') {
+    const legacy = { hasBeads: true, hasGrace: false }
+    projectCapabilities.value[path] = legacy
+    return legacy
+  }
 
   const cached = projectCapabilities.value[path]
   if (cached) return cached

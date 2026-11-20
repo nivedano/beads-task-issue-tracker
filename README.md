@@ -43,7 +43,7 @@ This project is a reimplementation of the Beads UI as a native desktop app using
 ## Features
 
 ### Live Updates — No Polling
-The app uses a **native file watcher** on the `.beads` directory. When an AI agent (or anyone) creates, updates, or closes an issue via `br` or `bd`, the change appears in real time — no refresh button, no polling interval. This is critical when monitoring AI-driven workflows where issues change rapidly.
+The app uses a **native file watcher** on the `.beads` and `.grace5/` directories. When an AI agent (or anyone) creates, updates, or closes an issue via `br` or `bd`, the change appears in real time — no refresh button, no polling interval. This is critical when monitoring AI-driven workflows where issues change rapidly.
 
 ### Dependencies & Relations
 - **Add/remove blockers** from the issue preview via a search modal
@@ -57,6 +57,14 @@ The app uses a **native file watcher** on the `.beads` directory. When an AI age
 - **Issue Management**: Create, edit, close, and comment on issues
 - **Epic Hierarchy**: Parent/child relationships with collapsible groups and inline progress bars
 - **Multi-Project Support**: Save favorite projects and switch between them instantly
+
+### GRACE Explorer (desktop, read-only)
+A read-only view of `.grace5/` changes living beside the beads registry. The app parses the state directly, so no `grace5` installation or CLI is required.
+- **Changes table**: lifecycle stage (`prepared` → `approved` → `executing` → `reviewed` → `closed`), authorization (`unapproved` / `approved` / `rejected` / `altered after approval`, computed from the contract's raw bytes exactly like the kernel), latest `passed/required` check counts, review status with open findings, and revision. Filter by stage, authorization and open/closed, search id/title/Problem text, sort by column, and navigate rows with the keyboard
+- **Change detail**: lifecycle stepper, the contract's sections (problem, change, constraints with rule citations, non-goals, acceptance with check references, affected paths/names/protected, environments, decisions), checks with their latest recorded verdicts and an in-app log viewer, the records timeline (approvals, runs with per-check receipts, reviews with findings, close, and legacy briefs opened externally), and rendered `notes.md`
+- **Tab rule**: when a project has both `.beads/` and `.grace5/`, the center panel shows `Issues (n) | GRACE (n)` and remembers the active tab per project. A project with only one registry renders that explorer bare, with no strip
+- **Grace-only projects** can be added and opened: the app watches `.grace5/`, never runs `bd`/`git` for them, and the dashboard shows a “GRACE explorer active” notice instead of an empty beads dashboard
+- **Read-only and structural**: nothing is ever written to `.grace5/`, approvals are displayed as recorded and check counts are display-level — `grace5 check`/`status` remains the authority. Malformed changes are flagged with their structural defect and never hidden, and a kernel pin other than `0.9.0` shows a warning banner but still parses
 
 ### Attachments
 - **Image Attachments**: Attach and preview screenshots directly in issues (thumbnail gallery)

@@ -1,5 +1,28 @@
 # Changelog
 
+## [2.27.0] - 2026-11-20
+
+> Requires **bd 0.49.x**. Recommended CLI: **br** 0.7.x (verified with 0.7.4).
+
+### Features
+- **GRACE explorer (desktop, read-only)**: beside the issue explorer, a project with a `.grace5/`
+  folder gets a read-only view of its GRACE changes — stage, kernel-equivalent authorization
+  (raw contract bytes, CRLF→LF only, approval for the current revision), latest `passed/required`
+  check counts, review status and open findings, and revision, with stage/authorization/scope
+  filters, search, sorting, per-project persistence and keyboard navigation. The detail panel shows
+  the lifecycle stepper, the contract's sections, checks with their latest recorded verdicts and an
+  in-app log viewer, the records timeline (approvals, runs with per-check receipts, reviews, close,
+  legacy briefs) and rendered `notes.md`. Nothing is written to `.grace5/` and nothing is
+  re-verified — `grace5 check`/`status` remains the authority, malformed changes are flagged not
+  hidden, and a pin other than 0.9.0 warns but still parses
+- **Center tab strip**: projects containing both registries show `Issues (n) | GRACE (n)` and
+  remember the active tab per project; a project with a single registry renders that explorer bare
+- **Grace-only projects**: the folder picker accepts a `.grace5/` folder without a `.beads/`
+  registry, that project never runs a `bd`/`git` command (project counts are skipped, a GRACE badge
+  replaces them), and the dashboard shows a grace-only notice instead of an empty beads dashboard
+- **Live `.grace5/` refresh**: the native watcher and adaptive polling now cover `.grace5/`, and the
+  `.beads` mtime gate keeps grace churn from reloading the issue list
+
 ## [2.26.0] - 2026-11-08
 
 > Requires **bd 0.49.x**. Recommended CLI: **br** 0.7.x (verified with 0.7.4).
