@@ -3,7 +3,7 @@
 //! The grace5 kernel remains authoritative; this module only reads `.grace5/`
 //! and never writes to it.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::path::{Component, Path, PathBuf};
 use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant, SystemTime};
@@ -117,23 +117,114 @@ pub fn grace_open_file(path: String, rel_path: String) -> Result<(), String> {
     fs::open_with_default_app(&fs::open_argument(&resolved))
 }
 
-/// Project-relative location of the architecture term lexicon.
-const LEXICON_RELATIVE: [&str; 3] = ["models", "architecture", "term-lexicon.yaml"];
+/// Lexicon file names searched for anywhere below `<project>/models/`.
+const LEXICON_FILE_NAMES: [&str; 2] = ["term-lexicon.yaml", "term-lexicon.yml"];
+/// Directories searched below `models/` are capped at this depth (models/ = 0).
+const LEXICON_MAX_DEPTH: usize = 8;
 
-/// Reads `<project>/models/architecture/term-lexicon.yaml` for prose
-/// highlighting. Canonicalizes the project root and the file so a symlink
-/// cannot escape the project; the same 1 MiB cap as notes applies. Missing,
-/// non-file or unreadable files yield `None` (highlighting then degrades to the
-/// two structural classes).
-pub fn read_project_lexicon(project: &Path) -> Option<String> {
-    let root = project.canonicalize().ok()?;
-    let target = LEXICON_RELATIVE
-        .iter()
-        .fold(root.clone(), |path, part| path.join(part));
-    let resolved = target.canonicalize().ok()?;
-    if !resolved.starts_with(&root) || !resolved.is_file() {
+/// Finds the project's architecture term lexicon by breadth-first walk of
+/// `<root>/models/`, shallowest file first. Entries of every directory are
+/// sorted, so a tie at the same depth resolves to the lexicographically
+/// smallest path relative to `models/`. Hidden directories and `node_modules`
+/// are skipped, symlinked directories are never descended (cycle/escape
+/// safety), and a symlinked file is accepted only when its canonical path stays
+/// inside the canonical project root. Returns the canonical file path.
+fn find_project_lexicon(root: &Path) -> Option<PathBuf> {
+    let models = root.join("models");
+    let metadata = std::fs::symlink_metadata(&models).ok()?;
+    // A symlinked `models/` (or a plain file) is not searched.
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
         return None;
     }
+
+    let mut best: Option<(usize, String, PathBuf)> = None;
+    let mut queue: VecDeque<(PathBuf, usize)> = VecDeque::new();
+    queue.push_back((models.clone(), 0));
+
+    while let Some((dir, depth)) = queue.pop_front() {
+        // A shallower match cannot appear once the walk passes its depth.
+        if let Some((best_depth, ..)) = &best {
+            if depth > *best_depth {
+                break;
+            }
+        }
+
+        let Ok(read_dir) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        let mut entries: Vec<(std::ffi::OsString, PathBuf, std::fs::FileType)> = Vec::new();
+        for entry in read_dir.flatten() {
+            let Ok(file_type) = entry.file_type() else {
+                continue;
+            };
+            entries.push((entry.file_name(), entry.path(), file_type));
+        }
+        entries.sort_by(|a, b| a.0.cmp(&b.0));
+
+        let mut subdirectories: Vec<PathBuf> = Vec::new();
+        for (name, path, file_type) in entries {
+            if file_type.is_dir() {
+                let name = name.to_string_lossy();
+                if depth < LEXICON_MAX_DEPTH
+                    && !name.starts_with('.')
+                    && name != "node_modules"
+                {
+                    subdirectories.push(path);
+                }
+                continue;
+            }
+            if !LEXICON_FILE_NAMES
+                .iter()
+                .any(|candidate| name.to_string_lossy().as_ref() == *candidate)
+            {
+                continue;
+            }
+
+            let resolved = if file_type.is_symlink() {
+                let Ok(resolved) = path.canonicalize() else {
+                    continue;
+                };
+                if !resolved.starts_with(root) || !resolved.is_file() {
+                    continue;
+                }
+                resolved
+            } else if file_type.is_file() {
+                path.clone()
+            } else {
+                continue;
+            };
+
+            let relative = path
+                .strip_prefix(&models)
+                .map(|relative| relative.to_string_lossy().replace('\\', "/"))
+                .unwrap_or_default();
+            let candidate = (depth, relative, resolved);
+            let better = match &best {
+                Some((best_depth, best_relative, _)) => {
+                    (candidate.0, candidate.1.as_str()) < (*best_depth, best_relative.as_str())
+                }
+                None => true,
+            };
+            if better {
+                best = Some(candidate);
+            }
+        }
+
+        for subdirectory in subdirectories {
+            queue.push_back((subdirectory, depth + 1));
+        }
+    }
+
+    best.map(|(_, _, path)| path)
+}
+
+/// Reads the project's architecture term lexicon (see `find_project_lexicon`)
+/// for prose highlighting. Missing, non-file or unreadable files yield `None`
+/// (highlighting then degrades to the two structural classes); the same 1 MiB
+/// cap as notes applies.
+pub fn read_project_lexicon(project: &Path) -> Option<String> {
+    let root = project.canonicalize().ok()?;
+    let resolved = find_project_lexicon(&root)?;
     fs::read_text_capped(&resolved).map(|(text, _)| text)
 }
 
@@ -434,5 +525,123 @@ mod tests {
             return;
         }
         assert_eq!(read_project_lexicon(project.path()), None);
+    }
+
+    fn write_lexicon_at(dir: &TempDir, relative: &str, contents: &[u8]) {
+        let path = dir.path().join(relative);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, contents).unwrap();
+    }
+
+    #[test]
+    fn finds_a_lexicon_in_a_nested_subdirectory() {
+        let dir = TempDir::new("lexicon-nested");
+        write_lexicon_at(&dir, "models/deep/nested/term-lexicon.yaml", b"M1.2: gloss\n");
+        assert_eq!(
+            read_project_lexicon(dir.path()).as_deref(),
+            Some("M1.2: gloss\n")
+        );
+    }
+
+    #[test]
+    fn finds_a_yml_lexicon() {
+        let dir = TempDir::new("lexicon-yml");
+        write_lexicon_at(&dir, "models/architecture/term-lexicon.yml", b"- M1.2\n");
+        assert_eq!(read_project_lexicon(dir.path()).as_deref(), Some("- M1.2\n"));
+    }
+
+    #[test]
+    fn the_shallowest_lexicon_wins() {
+        let dir = TempDir::new("lexicon-shallow");
+        write_lexicon_at(&dir, "models/deep/nested/term-lexicon.yaml", b"deep\n");
+        write_lexicon_at(&dir, "models/architecture/term-lexicon.yaml", b"shallow\n");
+        assert_eq!(
+            read_project_lexicon(dir.path()).as_deref(),
+            Some("shallow\n")
+        );
+    }
+
+    #[test]
+    fn equal_depth_ties_resolve_to_the_smallest_relative_path() {
+        let dir = TempDir::new("lexicon-tie");
+        write_lexicon_at(&dir, "models/b/x/term-lexicon.yaml", b"b\n");
+        write_lexicon_at(&dir, "models/a/x/term-lexicon.yaml", b"a\n");
+        assert_eq!(read_project_lexicon(dir.path()).as_deref(), Some("a\n"));
+    }
+
+    #[test]
+    fn hidden_and_node_modules_directories_are_skipped() {
+        let dir = TempDir::new("lexicon-skips");
+        write_lexicon_at(&dir, "models/.hidden/term-lexicon.yaml", b"hidden\n");
+        write_lexicon_at(&dir, "models/node_modules/pkg/term-lexicon.yaml", b"modules\n");
+        assert_eq!(read_project_lexicon(dir.path()), None);
+    }
+
+    #[test]
+    fn symlinked_directories_are_not_descended() {
+        use crate::grace::test_support::symlink_dir;
+
+        let project = TempDir::new("lexicon-symlink-dir");
+        let outside = TempDir::new("lexicon-symlink-dir-outside");
+        write_lexicon(&outside, b"outside\n");
+        let models = project.path().join("models");
+        fs::create_dir_all(&models).unwrap();
+        if symlink_dir(&outside.path().join("models"), &models.join("linked")).is_err() {
+            eprintln!("skipping symlinked directory: cannot create a directory symlink here");
+            return;
+        }
+        assert_eq!(read_project_lexicon(project.path()), None);
+    }
+
+    #[test]
+    fn a_symlinked_lexicon_file_escaping_the_project_is_rejected() {
+        use crate::grace::test_support::symlink_file;
+
+        let project = TempDir::new("lexicon-file-symlink");
+        let outside = TempDir::new("lexicon-file-outside");
+        write_lexicon(&outside, b"outside\n");
+        let target = project.path().join("models/architecture/term-lexicon.yaml");
+        fs::create_dir_all(target.parent().unwrap()).unwrap();
+        if symlink_file(
+            &outside.path().join("models/architecture/term-lexicon.yaml"),
+            &target,
+        )
+        .is_err()
+        {
+            eprintln!("skipping symlinked file: cannot create a file symlink here");
+            return;
+        }
+        assert_eq!(read_project_lexicon(project.path()), None);
+    }
+
+    #[test]
+    fn a_symlinked_lexicon_file_inside_the_project_is_accepted() {
+        use crate::grace::test_support::symlink_file;
+
+        let dir = TempDir::new("lexicon-file-inside");
+        write_lexicon_at(&dir, "models/real/lexicon.yaml", b"inside\n");
+        let target = dir.path().join("models/architecture/term-lexicon.yaml");
+        fs::create_dir_all(target.parent().unwrap()).unwrap();
+        if symlink_file(&dir.path().join("models/real/lexicon.yaml"), &target).is_err() {
+            eprintln!("skipping symlinked file: cannot create a file symlink here");
+            return;
+        }
+        assert_eq!(read_project_lexicon(dir.path()).as_deref(), Some("inside\n"));
+    }
+
+    #[test]
+    fn the_lexicon_search_is_depth_capped() {
+        let dir = TempDir::new("lexicon-depth");
+        let mut deep = String::from("models");
+        for level in 0..LEXICON_MAX_DEPTH {
+            deep.push_str(&format!("/d{level}"));
+        }
+        write_lexicon_at(&dir, &format!("{deep}/term-lexicon.yaml"), b"eight\n");
+        assert_eq!(read_project_lexicon(dir.path()).as_deref(), Some("eight\n"));
+
+        let too_deep = format!("{deep}/d{LEXICON_MAX_DEPTH}/term-lexicon.yaml");
+        let other = TempDir::new("lexicon-depth-over");
+        write_lexicon_at(&other, &too_deep, b"nine\n");
+        assert_eq!(read_project_lexicon(other.path()), None);
     }
 }

@@ -1,15 +1,15 @@
 import { open, realpath, stat } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import { isWithinRoot } from '../../utils/lexicon-path'
+import { findLexiconFile } from '../../utils/lexicon-path'
 
 const MAX_LEXICON_BYTES = 1024 * 1024
-const LEXICON_RELATIVE = ['models', 'architecture', 'term-lexicon.yaml'] as const
 
 /**
- * Reads `<project>/models/architecture/term-lexicon.yaml` for prose
- * highlighting. Mirrors the Rust `read_lexicon` command: resolves symlinks,
- * refuses anything that escapes the project, caps the read at 1 MiB and
- * returns `null` when the file is missing or not a regular file.
+ * Reads the project's architecture term lexicon for prose highlighting.
+ * Mirrors the Rust `read_lexicon` command: discovers `term-lexicon.yaml`/`.yml`
+ * anywhere under `<project>/models/` (see `findLexiconFile` for the discovery
+ * and tie-break rules), caps the read at 1 MiB and returns `null` when no
+ * lexicon exists or it is unreadable.
  */
 export default defineEventHandler(async (event) => {
   const query = getQuery(event)
@@ -18,17 +18,16 @@ export default defineEventHandler(async (event) => {
 
   try {
     const root = await realpath(resolve(project))
-    const target = resolve(root, ...LEXICON_RELATIVE)
-    const resolved = await realpath(target)
-    if (!isWithinRoot(root, resolved)) return null
+    const discovered = await findLexiconFile(root)
+    if (!discovered) return null
 
-    const info = await stat(resolved)
+    const info = await stat(discovered)
     if (!info.isFile()) return null
 
     const length = Math.min(info.size, MAX_LEXICON_BYTES)
     if (length === 0) return ''
 
-    const handle = await open(resolved, 'r')
+    const handle = await open(discovered, 'r')
     try {
       const buffer = Buffer.alloc(length)
       const { bytesRead } = await handle.read(buffer, 0, length, 0)
