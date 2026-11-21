@@ -4014,6 +4014,7 @@ pub fn run() {
             grace::grace_read_file,
             grace::grace_open_file,
             grace::grace_check_changed,
+            grace::read_lexicon,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -415,6 +415,33 @@
   color-scheme: dark;
 }
 
+/* ── Prose highlight theme variables (paths/URLs, lexicon, doc ids) ──────────
+   Declared after `.dark` on purpose: neon/flat also carry the `dark` class, and
+   an equal-specificity rule later in source order wins. */
+:root {
+  --hl-ref: #3b82f6;
+  --hl-lexicon: #b8860b;
+  --hl-docid: #8b5cf6;
+}
+
+.dark {
+  --hl-ref: #60a5fa;
+  --hl-lexicon: #e0c080;
+  --hl-docid: #a78bfa;
+}
+
+[data-theme="flat"] {
+  --hl-ref: #60a5fa;
+  --hl-lexicon: #e0c080;
+  --hl-docid: #a78bfa;
+}
+
+[data-theme="neon"] {
+  --hl-ref: #00d4ff;
+  --hl-lexicon: #ffaa00;
+  --hl-docid: #bf5fff;
+}
+
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
 }
@@ -864,6 +891,41 @@ body {
 
 .markdown-base.reader td {
   @apply px-3 py-2 border border-border;
+}
+
+/* ── Prose highlighting classes ─────────────────────────────────────────────
+   Applied by the `v-highlight` directive to plain text nodes after markdown
+   sanitization. Theme colors come from --hl-*; the scoped rules keep prose
+   containers from overriding a span's own color. */
+.hl-ref {
+  color: var(--hl-ref);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.hl-lexicon {
+  color: var(--hl-lexicon);
+  font-weight: 500;
+}
+
+.hl-docid {
+  color: var(--hl-docid);
+  background: color-mix(in srgb, var(--hl-docid) 12%, transparent);
+  border-radius: 3px;
+  padding: 0 3px;
+  font-weight: 500;
+}
+
+.markdown-base .hl-ref {
+  color: var(--hl-ref);
+}
+
+.markdown-base .hl-lexicon {
+  color: var(--hl-lexicon);
+}
+
+.markdown-base .hl-docid {
+  color: var(--hl-docid);
 }
 
 /* Search highlights in markdown modal */

@@ -8,7 +8,7 @@ defineProps<{
 </script>
 
 <template>
-  <div class="space-y-4">
+  <div v-highlight class="space-y-4">
     <section>
       <h4 :class="sectionHeading">Problem</h4>
       <p v-if="contract.problem" class="text-xs whitespace-pre-line">{{ contract.problem }}</p>

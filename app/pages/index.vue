@@ -68,6 +68,10 @@ import {
 const { filters, toggleStatus, toggleType, togglePriority, toggleAssignee, clearFilters, setStatusFilter, setAllFilters, setSearch, toggleLabelFilter } = useFilters()
 const { columns, toggleColumn, setColumns, resetColumns } = useColumnConfig()
 const { beadsPath, hasStoredPath } = useBeadsPath()
+const { loadLexicon } = useLexicon()
+
+// Keep prose highlighting in sync with the opened project (missing file → empty).
+watch(beadsPath, (path) => { void loadLexicon(path) }, { immediate: true })
 const { success: notifySuccess, error: notifyError } = useNotification()
 const { projects } = useProjects()
 const {

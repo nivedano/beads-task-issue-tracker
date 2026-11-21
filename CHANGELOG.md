@@ -12,6 +12,13 @@
   command names are unchanged as the Tauri API; they now target `br` exclusively.
 
 ### Features
+- **Prose syntax highlighting**: issue prose (description, comments, design/working notes,
+  acceptance criteria) and GRACE notes, contracts and record statements highlight three classes —
+  local paths/URLs (underline + blue), documentation ids such as `UC-12`, `DR-MSR-001`, `C-0019`
+  and `iss-1234` (violet pill), and terms from `<project>/models/architecture/term-lexicon.yaml`
+  (sand accent, only defined `X.Y`/`X.Y.Z` terms). Applied post-sanitization as a DOM walk, so code
+  blocks, tables, links and logs are untouched; a missing lexicon file degrades to the first two
+  classes. Colors adapt across all four themes. See `docs/text-highlighting.md`
 - **GRACE explorer (desktop, read-only)**: beside the issue explorer, a project with a `.grace5/`
   folder gets a read-only view of its GRACE changes — stage, kernel-equivalent authorization
   (raw contract bytes, CRLF→LF only, approval for the current revision), latest `passed/required`

@@ -814,6 +814,17 @@ export async function graceOpenFile(path: string, relPath: string): Promise<void
   throw new Error('GRACE explorer is only available in the desktop app')
 }
 
+/**
+ * Reads the project's architecture term lexicon for prose highlighting.
+ * `null` means the file is absent or unreadable, which is not an error.
+ */
+export async function graceReadLexicon(path: string): Promise<string | null> {
+  if (isTauri()) {
+    return invoke<string | null>('read_lexicon', { path })
+  }
+  return $fetch<string | null>(`/api/grace/lexicon?path=${encodeURIComponent(path)}`)
+}
+
 // ============================================================================
 // Update Checker API
 // ============================================================================

@@ -117,6 +117,32 @@ pub fn grace_open_file(path: String, rel_path: String) -> Result<(), String> {
     fs::open_with_default_app(&fs::open_argument(&resolved))
 }
 
+/// Project-relative location of the architecture term lexicon.
+const LEXICON_RELATIVE: [&str; 3] = ["models", "architecture", "term-lexicon.yaml"];
+
+/// Reads `<project>/models/architecture/term-lexicon.yaml` for prose
+/// highlighting. Canonicalizes the project root and the file so a symlink
+/// cannot escape the project; the same 1 MiB cap as notes applies. Missing,
+/// non-file or unreadable files yield `None` (highlighting then degrades to the
+/// two structural classes).
+pub fn read_project_lexicon(project: &Path) -> Option<String> {
+    let root = project.canonicalize().ok()?;
+    let target = LEXICON_RELATIVE
+        .iter()
+        .fold(root.clone(), |path, part| path.join(part));
+    let resolved = target.canonicalize().ok()?;
+    if !resolved.starts_with(&root) || !resolved.is_file() {
+        return None;
+    }
+    fs::read_text_capped(&resolved).map(|(text, _)| text)
+}
+
+/// Reads the project's architecture term lexicon (see `read_project_lexicon`).
+#[command]
+pub fn read_lexicon(path: String) -> Option<String> {
+    read_project_lexicon(Path::new(&path))
+}
+
 /// Whether the project's `.grace5` tree changed since the previous call.
 #[command]
 pub async fn grace_check_changed(path: String) -> Result<bool, String> {
@@ -353,5 +379,44 @@ mod tests {
         );
         let third = memoized_grace_fingerprint(dir.path(), &key).expect("refreshed fingerprint");
         assert_ne!(first, third, "after the TTL the walk observes the new file");
+    }
+
+    fn write_lexicon(dir: &TempDir, contents: &[u8]) {
+        let path = dir
+            .path()
+            .join("models/architecture/term-lexicon.yaml");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, contents).unwrap();
+    }
+
+    #[test]
+    fn reads_the_project_lexicon() {
+        let dir = TempDir::new("lexicon");
+        write_lexicon(&dir, b"terms:\n  - M1.2\n");
+        assert_eq!(
+            read_project_lexicon(dir.path()).as_deref(),
+            Some("terms:\n  - M1.2\n")
+        );
+    }
+
+    #[test]
+    fn missing_lexicon_is_none() {
+        let dir = TempDir::new("lexicon-missing");
+        assert_eq!(read_project_lexicon(dir.path()), None);
+    }
+
+    #[test]
+    fn lexicon_is_capped_at_one_mib() {
+        let dir = TempDir::new("lexicon-cap");
+        write_lexicon(&dir, &vec![b'a'; crate::grace::fs::MAX_READ_BYTES + 10]);
+        let text = read_project_lexicon(dir.path()).expect("capped lexicon");
+        assert_eq!(text.len(), crate::grace::fs::MAX_READ_BYTES);
+    }
+
+    #[test]
+    fn a_non_file_lexicon_is_none() {
+        let dir = TempDir::new("lexicon-dir");
+        fs::create_dir_all(dir.path().join("models/architecture/term-lexicon.yaml")).unwrap();
+        assert_eq!(read_project_lexicon(dir.path()), None);
     }
 }

@@ -54,7 +54,7 @@ const toggleRun = (n: number) => {
             <span v-if="approval.date" class="text-[10px] text-muted-foreground">{{ approval.date }}</span>
             <span class="text-[10px] text-muted-foreground font-mono">{{ approval.file }}</span>
           </div>
-          <p v-if="approval.statement" class="text-xs whitespace-pre-line">{{ approval.statement }}</p>
+          <p v-if="approval.statement" v-highlight class="text-xs whitespace-pre-line">{{ approval.statement }}</p>
           <div class="text-[10px] text-muted-foreground space-y-0.5">
             <div>contract-sha256: <span class="font-mono break-all">{{ approval.contractSha256 }}</span></div>
             <div v-if="approval.briefSha256">brief-sha256: <span class="font-mono break-all">{{ approval.briefSha256 }}</span></div>
@@ -138,7 +138,7 @@ const toggleRun = (n: number) => {
                     Log
                   </Button>
                 </div>
-                <div v-if="result.reason" class="text-destructive">reason: {{ result.reason }}</div>
+                <div v-if="result.reason" v-highlight class="text-destructive">reason: {{ result.reason }}</div>
                 <div v-if="result.trace" class="text-muted-foreground">
                   trace matched {{ result.trace.matched }}/{{ result.trace.expected }}
                   <span v-if="result.trace.missing.length > 0" class="text-destructive">
@@ -148,7 +148,7 @@ const toggleRun = (n: number) => {
                     · forbidden: {{ result.trace.forbidden.join(', ') }}
                   </span>
                 </div>
-                <div v-if="result.observation" class="text-muted-foreground">
+                <div v-if="result.observation" v-highlight class="text-muted-foreground">
                   observation at {{ result.observation.at }} · build {{ result.observation.build }} ·
                   {{ result.observation.environment }}: {{ result.observation.note }}
                 </div>
