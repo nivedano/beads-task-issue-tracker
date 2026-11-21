@@ -27,9 +27,13 @@ export async function loadLexicon(projectPath: string | null | undefined): Promi
   }
 
   try {
-    const yaml = await graceReadLexicon(path)
+    const documents = await graceReadLexicon(path)
     if (request !== generation) return
-    lexicon.value = yaml ? parseLexicon(yaml) : new Set<string>()
+    const merged = new Set<string>()
+    for (const document of documents) {
+      for (const term of parseLexicon(document)) merged.add(term)
+    }
+    lexicon.value = merged
   } catch (error) {
     if (request !== generation) return
     lexicon.value = new Set<string>()

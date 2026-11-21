@@ -815,14 +815,17 @@ export async function graceOpenFile(path: string, relPath: string): Promise<void
 }
 
 /**
- * Reads the project's architecture term lexicon for prose highlighting.
- * `null` means the file is absent or unreadable, which is not an error.
+ * Reads every project term lexicon plus each one's cited sibling lexicon.
+ * An empty array means no lexicon exists or none is readable, which is not an
+ * error; highlighting then uses the two structural classes only.
  */
-export async function graceReadLexicon(path: string): Promise<string | null> {
+export async function graceReadLexicon(path: string): Promise<string[]> {
   if (isTauri()) {
-    return invoke<string | null>('read_lexicon', { path })
+    const contents = await invoke<string[] | null>('read_lexicon', { path })
+    return contents ?? []
   }
-  return $fetch<string | null>(`/api/grace/lexicon?path=${encodeURIComponent(path)}`)
+  const contents = await $fetch<string[] | null>(`/api/grace/lexicon?path=${encodeURIComponent(path)}`)
+  return contents ?? []
 }
 
 // ============================================================================

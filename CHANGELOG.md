@@ -29,10 +29,14 @@
 - **Prose syntax highlighting**: issue prose (description, comments, design/working notes,
   acceptance criteria) and GRACE notes, contracts and record statements highlight three classes —
   local paths/URLs (underline + blue), documentation ids such as `UC-12`, `DR-MSR-001`, `C-0019`
-  and `iss-1234` (violet pill), and terms from `<project>/models/architecture/term-lexicon.yaml`
-  (sand accent, only terms defined in the lexicon). Applied post-sanitization as a DOM walk, so code
-  blocks, tables, links and logs are untouched; a missing lexicon file degrades to the first two
-  classes. Colors adapt across all four themes. See `docs/text-highlighting.md`
+  and `iss-1234` (violet pill), and terms from the project's term lexicons
+  (sand accent, only terms defined in the lexicon). Every `term-lexicon.yaml` under
+  `<project>/models/` is read (not just the shallowest), and each lexicon's `# Schema:` header
+  citation is followed one hop to a sibling repository's lexicon — so an mText project also
+  highlights the Protocols-owned `Order`/`SyntaxNode`/`Document`/`Catena` vocabulary. Applied
+  post-sanitization as a DOM walk, so code blocks, tables, links and logs are untouched; a missing
+  lexicon file degrades to the first two classes. Colors adapt across all four themes. See
+  `docs/text-highlighting.md`
 - **GRACE explorer (desktop, read-only)**: beside the issue explorer, a project with a `.grace5/`
   folder gets a read-only view of its GRACE changes — stage, kernel-equivalent authorization
   (raw contract bytes, CRLF→LF only, approval for the current revision), latest `passed/required`

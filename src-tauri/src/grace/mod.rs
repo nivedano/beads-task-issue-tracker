@@ -3,7 +3,7 @@
 //! The grace5 kernel remains authoritative; this module only reads `.grace5/`
 //! and never writes to it.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Component, Path, PathBuf};
 use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant, SystemTime};
@@ -122,33 +122,27 @@ const LEXICON_FILE_NAMES: [&str; 2] = ["term-lexicon.yaml", "term-lexicon.yml"];
 /// Directories searched below `models/` are capped at this depth (models/ = 0).
 const LEXICON_MAX_DEPTH: usize = 8;
 
-/// Finds the project's architecture term lexicon by breadth-first walk of
-/// `<root>/models/`, shallowest file first. Entries of every directory are
-/// sorted, so a tie at the same depth resolves to the lexicographically
-/// smallest path relative to `models/`. Hidden directories and `node_modules`
-/// are skipped, symlinked directories are never descended (cycle/escape
-/// safety), and a symlinked file is accepted only when its canonical path stays
-/// inside the canonical project root. Returns the canonical file path.
-fn find_project_lexicon(root: &Path) -> Option<PathBuf> {
+/// Finds every architecture term lexicon below `<root>/models/` in
+/// breadth-first order. Entries of every directory are sorted, so the order is
+/// deterministic; hidden directories and `node_modules` are skipped, symlinked
+/// directories are never descended (cycle/escape safety), and a symlinked file
+/// is accepted only when its canonical path stays inside the canonical project
+/// root.
+fn find_project_lexicons(root: &Path) -> Vec<PathBuf> {
     let models = root.join("models");
-    let metadata = std::fs::symlink_metadata(&models).ok()?;
+    let Ok(metadata) = std::fs::symlink_metadata(&models) else {
+        return Vec::new();
+    };
     // A symlinked `models/` (or a plain file) is not searched.
     if metadata.file_type().is_symlink() || !metadata.is_dir() {
-        return None;
+        return Vec::new();
     }
 
-    let mut best: Option<(usize, String, PathBuf)> = None;
+    let mut found = Vec::new();
     let mut queue: VecDeque<(PathBuf, usize)> = VecDeque::new();
     queue.push_back((models.clone(), 0));
 
     while let Some((dir, depth)) = queue.pop_front() {
-        // A shallower match cannot appear once the walk passes its depth.
-        if let Some((best_depth, ..)) = &best {
-            if depth > *best_depth {
-                break;
-            }
-        }
-
         let Ok(read_dir) = std::fs::read_dir(&dir) else {
             continue;
         };
@@ -189,25 +183,11 @@ fn find_project_lexicon(root: &Path) -> Option<PathBuf> {
                 }
                 resolved
             } else if file_type.is_file() {
-                path.clone()
+                path
             } else {
                 continue;
             };
-
-            let relative = path
-                .strip_prefix(&models)
-                .map(|relative| relative.to_string_lossy().replace('\\', "/"))
-                .unwrap_or_default();
-            let candidate = (depth, relative, resolved);
-            let better = match &best {
-                Some((best_depth, best_relative, _)) => {
-                    (candidate.0, candidate.1.as_str()) < (*best_depth, best_relative.as_str())
-                }
-                None => true,
-            };
-            if better {
-                best = Some(candidate);
-            }
+            found.push(resolved);
         }
 
         for subdirectory in subdirectories {
@@ -215,22 +195,146 @@ fn find_project_lexicon(root: &Path) -> Option<PathBuf> {
         }
     }
 
-    best.map(|(_, _, path)| path)
+    found
 }
 
-/// Reads the project's architecture term lexicon (see `find_project_lexicon`)
-/// for prose highlighting. Missing, non-file or unreadable files yield `None`
-/// (highlighting then degrades to the two structural classes); the same 1 MiB
-/// cap as notes applies.
-pub fn read_project_lexicon(project: &Path) -> Option<String> {
+/// First `# Schema: <citation>` header line of a lexicon, at column 0.
+fn schema_citation(text: &str) -> Option<&str> {
+    for line in text.lines() {
+        let Some(rest) = line.strip_prefix('#') else {
+            continue;
+        };
+        let Some(rest) = rest.trim_start().strip_prefix("Schema:") else {
+            continue;
+        };
+        if let Some(citation) = rest.split_whitespace().next() {
+            return Some(citation);
+        }
+    }
+    None
+}
+
+/// Resolves the lexicon cited by a lexicon's `# Schema:` header, ONE hop.
+///
+/// The citation is relative to the citing file. Leading `..` components climb
+/// toward the shared parent (`citedRepoRoot`); the canonicalized import target
+/// must stay inside that canonicalized root. Absolute paths, drive/UNC
+/// citations, interior escapes and symlinked citation directories are
+/// rejected. The citation may name the schema document beside the lexicon; the
+/// lexicon is then looked up in the citation target's directory. Missing
+/// files are skipped silently.
+fn cited_lexicon(file: &Path, citation: &str) -> Option<PathBuf> {
+    let relative = Path::new(citation);
+    let components: Vec<Component> = relative.components().collect();
+    if components.is_empty()
+        || components
+            .iter()
+            .any(|component| matches!(component, Component::Prefix(_) | Component::RootDir))
+    {
+        return None;
+    }
+
+    let lexicon_dir = file.parent()?.canonicalize().ok()?;
+    let mut cited_root_path = lexicon_dir.clone();
+    let mut leading_parents = 0;
+    for component in &components {
+        match component {
+            Component::CurDir => continue,
+            Component::ParentDir => leading_parents += 1,
+            _ => break,
+        }
+    }
+    for _ in 0..leading_parents {
+        cited_root_path = cited_root_path.parent()?.to_path_buf();
+    }
+    let cited_root = cited_root_path.canonicalize().ok()?;
+
+    let target = lexicon_dir.join(relative);
+    let names_lexicon = target
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| LEXICON_FILE_NAMES.contains(&name));
+    let directory = target.parent()?;
+
+    // A symlinked citation directory is never descended.
+    let metadata = std::fs::symlink_metadata(directory).ok()?;
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+        return None;
+    }
+
+    let candidates: Vec<PathBuf> = if names_lexicon {
+        vec![target]
+    } else {
+        LEXICON_FILE_NAMES
+            .iter()
+            .map(|name| directory.join(name))
+            .collect()
+    };
+
+    for candidate in candidates {
+        let Ok(canonical) = candidate.canonicalize() else {
+            continue;
+        };
+        if !canonical.starts_with(&cited_root) || !canonical.is_file() {
+            continue;
+        }
+        return Some(canonical);
+    }
+    None
+}
+
+/// Reads every architecture term lexicon of a project (see
+/// `find_project_lexicons`), then follows each lexicon's `# Schema:` header
+/// citation one hop to a sibling repository's lexicon (the cited schema
+/// document sits beside its lexicon). Project files come first in BFS order,
+/// imports after them in citation order, and canonical duplicates are read
+/// once. Missing, non-file or unreadable files are skipped; the 1 MiB cap is
+/// the notes cap.
+pub fn read_project_lexicon(project: &Path) -> Option<Vec<String>> {
     let root = project.canonicalize().ok()?;
-    let resolved = find_project_lexicon(&root)?;
-    fs::read_text_capped(&resolved).map(|(text, _)| text)
+    let files = find_project_lexicons(&root);
+
+    let mut seen: HashSet<PathBuf> = HashSet::new();
+    let mut texts: Vec<String> = Vec::new();
+    let mut citations: Vec<(PathBuf, String)> = Vec::new();
+
+    for file in files {
+        let key = file.canonicalize().unwrap_or_else(|_| file.clone());
+        if !seen.insert(key) {
+            continue;
+        }
+        let Some((text, _)) = fs::read_text_capped(&file) else {
+            continue;
+        };
+        if let Some(citation) = schema_citation(&text) {
+            citations.push((file, citation.to_string()));
+        }
+        texts.push(text);
+    }
+
+    // One hop only: an imported lexicon's own citation is never followed.
+    for (file, citation) in citations {
+        let Some(import) = cited_lexicon(&file, &citation) else {
+            continue;
+        };
+        if !seen.insert(import.clone()) {
+            continue;
+        }
+        if let Some((text, _)) = fs::read_text_capped(&import) {
+            texts.push(text);
+        }
+    }
+
+    if texts.is_empty() {
+        None
+    } else {
+        Some(texts)
+    }
 }
 
-/// Reads the project's architecture term lexicon (see `read_project_lexicon`).
+/// Reads the project's lexicons (see `read_project_lexicon`).
 #[command]
-pub fn read_lexicon(path: String) -> Option<String> {
+pub fn read_lexicon(path: String) -> Option<Vec<String>> {
     read_project_lexicon(Path::new(&path))
 }
 
@@ -485,8 +589,8 @@ mod tests {
         let dir = TempDir::new("lexicon");
         write_lexicon(&dir, b"terms:\n  - M1.2\n");
         assert_eq!(
-            read_project_lexicon(dir.path()).as_deref(),
-            Some("terms:\n  - M1.2\n")
+            read_project_lexicon(dir.path()),
+            Some(vec!["terms:\n  - M1.2\n".to_string()])
         );
     }
 
@@ -500,8 +604,9 @@ mod tests {
     fn lexicon_is_capped_at_one_mib() {
         let dir = TempDir::new("lexicon-cap");
         write_lexicon(&dir, &vec![b'a'; crate::grace::fs::MAX_READ_BYTES + 10]);
-        let text = read_project_lexicon(dir.path()).expect("capped lexicon");
-        assert_eq!(text.len(), crate::grace::fs::MAX_READ_BYTES);
+        let texts = read_project_lexicon(dir.path()).expect("capped lexicon");
+        assert_eq!(texts.len(), 1);
+        assert_eq!(texts[0].len(), crate::grace::fs::MAX_READ_BYTES);
     }
 
     #[test]
@@ -538,8 +643,8 @@ mod tests {
         let dir = TempDir::new("lexicon-nested");
         write_lexicon_at(&dir, "models/deep/nested/term-lexicon.yaml", b"M1.2: gloss\n");
         assert_eq!(
-            read_project_lexicon(dir.path()).as_deref(),
-            Some("M1.2: gloss\n")
+            read_project_lexicon(dir.path()),
+            Some(vec!["M1.2: gloss\n".to_string()])
         );
     }
 
@@ -547,26 +652,32 @@ mod tests {
     fn finds_a_yml_lexicon() {
         let dir = TempDir::new("lexicon-yml");
         write_lexicon_at(&dir, "models/architecture/term-lexicon.yml", b"- M1.2\n");
-        assert_eq!(read_project_lexicon(dir.path()).as_deref(), Some("- M1.2\n"));
-    }
-
-    #[test]
-    fn the_shallowest_lexicon_wins() {
-        let dir = TempDir::new("lexicon-shallow");
-        write_lexicon_at(&dir, "models/deep/nested/term-lexicon.yaml", b"deep\n");
-        write_lexicon_at(&dir, "models/architecture/term-lexicon.yaml", b"shallow\n");
         assert_eq!(
-            read_project_lexicon(dir.path()).as_deref(),
-            Some("shallow\n")
+            read_project_lexicon(dir.path()),
+            Some(vec!["- M1.2\n".to_string()])
         );
     }
 
     #[test]
-    fn equal_depth_ties_resolve_to_the_smallest_relative_path() {
+    fn returns_every_lexicon_in_breadth_first_order() {
+        let dir = TempDir::new("lexicon-shallow");
+        write_lexicon_at(&dir, "models/deep/nested/term-lexicon.yaml", b"deep\n");
+        write_lexicon_at(&dir, "models/architecture/term-lexicon.yaml", b"shallow\n");
+        assert_eq!(
+            read_project_lexicon(dir.path()),
+            Some(vec!["shallow\n".to_string(), "deep\n".to_string()])
+        );
+    }
+
+    #[test]
+    fn equal_depth_lexicons_keep_their_sorted_order() {
         let dir = TempDir::new("lexicon-tie");
         write_lexicon_at(&dir, "models/b/x/term-lexicon.yaml", b"b\n");
         write_lexicon_at(&dir, "models/a/x/term-lexicon.yaml", b"a\n");
-        assert_eq!(read_project_lexicon(dir.path()).as_deref(), Some("a\n"));
+        assert_eq!(
+            read_project_lexicon(dir.path()),
+            Some(vec!["a\n".to_string(), "b\n".to_string()])
+        );
     }
 
     #[test]
@@ -626,7 +737,10 @@ mod tests {
             eprintln!("skipping symlinked file: cannot create a file symlink here");
             return;
         }
-        assert_eq!(read_project_lexicon(dir.path()).as_deref(), Some("inside\n"));
+        assert_eq!(
+            read_project_lexicon(dir.path()),
+            Some(vec!["inside\n".to_string()])
+        );
     }
 
     #[test]
@@ -637,11 +751,177 @@ mod tests {
             deep.push_str(&format!("/d{level}"));
         }
         write_lexicon_at(&dir, &format!("{deep}/term-lexicon.yaml"), b"eight\n");
-        assert_eq!(read_project_lexicon(dir.path()).as_deref(), Some("eight\n"));
+        assert_eq!(
+            read_project_lexicon(dir.path()),
+            Some(vec!["eight\n".to_string()])
+        );
 
         let too_deep = format!("{deep}/d{LEXICON_MAX_DEPTH}/term-lexicon.yaml");
         let other = TempDir::new("lexicon-depth-over");
         write_lexicon_at(&other, &too_deep, b"nine\n");
         assert_eq!(read_project_lexicon(other.path()), None);
+    }
+
+    fn write_at(root: &Path, relative: &str, contents: &[u8]) {
+        let path = root.join(relative);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, contents).unwrap();
+    }
+
+    /// mtext-style layout: `<workspace>/repos/mtext` cites a sibling checkout.
+    fn cited_layout(label: &str) -> (TempDir, PathBuf, PathBuf) {
+        let workspace = TempDir::new(label);
+        let project = workspace.path().join("repos/mtext");
+        let core = workspace
+            .path()
+            .join("repos/metasteme-protocols/models/architecture/core");
+        fs::create_dir_all(&core).unwrap();
+        fs::write(core.join("term-lexicon-schema.md"), b"# schema\n").unwrap();
+        fs::write(
+            core.join("term-lexicon.yaml"),
+            b"# Term lexicon\n# Schema: term-lexicon-schema.md\n- term: Order\n",
+        )
+        .unwrap();
+        (workspace, project, core)
+    }
+
+    #[test]
+    fn follows_a_schema_citation_to_the_sibling_lexicon() {
+        let (_workspace, project, _core) = cited_layout("lexicon-cited");
+        let project_text = "# Term lexicon\n# Schema: ../../../metasteme-protocols/models/architecture/core/term-lexicon-schema.md (term-lexicon/v1).\n- term: title\n";
+        write_at(&project, "models/architecture/term-lexicon.yaml", project_text.as_bytes());
+
+        let texts = read_project_lexicon(&project).expect("project and cited lexicon");
+        assert_eq!(texts.len(), 2);
+        assert_eq!(texts[0], project_text);
+        assert!(texts[1].contains("term: Order"), "cited lexicon is imported");
+    }
+
+    #[test]
+    fn a_citation_naming_the_lexicon_file_is_used_directly() {
+        let (_workspace, project, _core) = cited_layout("lexicon-cited-file");
+        write_at(
+            &project,
+            "models/architecture/term-lexicon.yaml",
+            b"# Schema: ../../../metasteme-protocols/models/architecture/core/term-lexicon.yaml\n- term: title\n",
+        );
+        let texts = read_project_lexicon(&project).expect("cited lexicon");
+        assert_eq!(texts.len(), 2);
+        assert!(texts[1].contains("term: Order"));
+    }
+
+    #[test]
+    fn an_absolute_citation_is_rejected() {
+        let (_workspace, project, core) = cited_layout("lexicon-cited-absolute");
+        let absolute = core.join("term-lexicon.yaml");
+        let header = format!("# Schema: {}\n- term: title\n", absolute.display());
+        write_at(&project, "models/architecture/term-lexicon.yaml", header.as_bytes());
+        assert_eq!(read_project_lexicon(&project).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn a_citation_escaping_the_cited_root_is_rejected() {
+        let (workspace, project, _core) = cited_layout("lexicon-cited-escape");
+        write_at(
+            workspace.path(),
+            "outside/term-lexicon.yaml",
+            b"# Schema: term-lexicon-schema.md\n- term: leaked\n",
+        );
+        write_at(
+            &project,
+            "models/architecture/term-lexicon.yaml",
+            b"# Schema: ../../../metasteme-protocols/models/architecture/../../../../outside/term-lexicon.yaml\n- term: title\n",
+        );
+        let texts = read_project_lexicon(&project).unwrap();
+        assert_eq!(texts.len(), 1, "an interior .. escape is not imported");
+    }
+
+    #[test]
+    fn a_symlinked_citation_escape_is_rejected() {
+        use crate::grace::test_support::symlink_dir;
+
+        let (workspace, project, _core) = cited_layout("lexicon-cited-symlink");
+        let outside = TempDir::new("lexicon-cited-symlink-outside");
+        fs::write(
+            outside.path().join("term-lexicon.yaml"),
+            b"# Schema: term-lexicon-schema.md\n- term: leaked\n",
+        )
+        .unwrap();
+        // Replace the sibling checkout with a symlink to a tree outside the
+        // cited root (the workspace).
+        fs::remove_dir_all(workspace.path().join("repos/metasteme-protocols")).unwrap();
+        if symlink_dir(
+            outside.path(),
+            &workspace.path().join("repos/metasteme-protocols"),
+        )
+        .is_err() {
+            eprintln!("skipping cited symlink escape: cannot create a directory symlink here");
+            return;
+        }
+        write_at(
+            &project,
+            "models/architecture/term-lexicon.yaml",
+            b"# Schema: ../../../metasteme-protocols/term-lexicon-schema.md\n- term: title\n",
+        );
+        assert_eq!(read_project_lexicon(&project).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn a_missing_cited_lexicon_is_skipped() {
+        let (_workspace, project, core) = cited_layout("lexicon-cited-missing");
+        fs::remove_file(core.join("term-lexicon.yaml")).unwrap();
+        write_at(
+            &project,
+            "models/architecture/term-lexicon.yaml",
+            b"# Schema: ../../../metasteme-protocols/models/architecture/core/term-lexicon-schema.md\n- term: title\n",
+        );
+        let texts = read_project_lexicon(&project).unwrap();
+        assert_eq!(texts.len(), 1);
+    }
+
+    #[test]
+    fn an_imported_lexicons_own_citation_is_not_followed() {
+        let (_workspace, project, core) = cited_layout("lexicon-one-hop");
+        write_at(
+            &core,
+            "other/term-lexicon.yaml",
+            b"# Schema: term-lexicon-schema.md\n- term: third\n",
+        );
+        write_at(
+            &core,
+            "term-lexicon.yaml",
+            b"# Schema: other/term-lexicon-schema.md\n- term: Order\n",
+        );
+        write_at(
+            &project,
+            "models/architecture/term-lexicon.yaml",
+            b"# Schema: ../../../metasteme-protocols/models/architecture/core/term-lexicon-schema.md\n- term: title\n",
+        );
+        let texts = read_project_lexicon(&project).unwrap();
+        assert_eq!(texts.len(), 2, "one hop only");
+        assert!(texts.iter().all(|text| !text.contains("term: third")));
+    }
+
+    #[test]
+    fn duplicate_lexicon_paths_are_read_once() {
+        let (_workspace, project, core) = cited_layout("lexicon-dedup");
+        write_at(
+            &project,
+            "models/a/term-lexicon.yaml",
+            b"# Schema: ../../../metasteme-protocols/models/architecture/core/term-lexicon-schema.md\n- term: a\n",
+        );
+        write_at(
+            &project,
+            "models/b/term-lexicon.yaml",
+            b"# Schema: ../../../metasteme-protocols/models/architecture/core/term-lexicon-schema.md\n- term: b\n",
+        );
+        write_at(
+            &core,
+            "term-lexicon.yaml",
+            b"- term: Order\n",
+        );
+        let texts = read_project_lexicon(&project).unwrap();
+        assert_eq!(texts.len(), 3, "two project files plus one shared import");
+        assert_eq!(texts.iter().filter(|text| text.contains("term: Order")).count(), 1);
     }
 }

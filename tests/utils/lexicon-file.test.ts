@@ -1,15 +1,16 @@
 import { describe, it, expect, afterEach } from 'vitest'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { parseLexicon } from '~/utils/text-highlight'
-import { findLexiconFile } from '../../server/utils/lexicon-path'
+import { readProjectLexicons } from '../../server/utils/lexicon-path'
 
 /**
- * End-to-end check for the desktop read path: a project root on disk gets a
- * real lexicon file, `findLexiconFile` mirrors the Rust discovery walk, and the
- * frontend parser turns the file content into the highlight set. The Tauri IPC
- * boundary itself is exercised by the Rust tests in `src-tauri/src/grace`.
+ * End-to-end check for the desktop read path: a project root on disk gets real
+ * lexicon files, `readProjectLexicons` mirrors the Rust discovery + cited-import
+ * walk, and the frontend parser turns each file content into the highlight set.
+ * The Tauri IPC boundary itself is exercised by the Rust tests in
+ * `src-tauri/src/grace`.
  */
 describe('lexicon file discovery and parsing', () => {
   const created: string[] = []
@@ -33,10 +34,9 @@ describe('lexicon file discovery and parsing', () => {
       ['M1.2: first gloss', 'M1.3:', '  A definition block M9.9 must not leak.', ''].join('\n'),
     )
 
-    const discovered = await findLexiconFile(root)
-    expect(discovered).not.toBeNull()
-    const yaml = await readFile(discovered!, 'utf8')
-    expect([...parseLexicon(yaml)]).toEqual(['M1.2', 'M1.3'])
+    const discovered = await readProjectLexicons(root)
+    expect(discovered).toHaveLength(1)
+    expect([...parseLexicon(discovered[0]!)]).toEqual(['M1.2', 'M1.3'])
   })
 
   it('parses a lexicon at the documented architecture location', async () => {
@@ -48,8 +48,9 @@ describe('lexicon file discovery and parsing', () => {
       ['---', 'terms:', '  - M1.2        # comment', '  - "arch.method.v2"', '...', ''].join('\n'),
     )
 
-    const yaml = await readFile(file, 'utf8')
-    expect([...parseLexicon(yaml)]).toEqual(['M1.2', 'arch.method.v2'])
+    const documents = await readProjectLexicons(root)
+    expect(documents).toHaveLength(1)
+    expect([...parseLexicon(documents[0]!)]).toEqual(['M1.2', 'arch.method.v2'])
   })
 
   it('parses the self-describing entries: schema used by real lexicons', async () => {
@@ -96,10 +97,9 @@ describe('lexicon file discovery and parsing', () => {
       ].join('\n'),
     )
 
-    const discovered = await findLexiconFile(root)
-    expect(discovered).not.toBeNull()
-    const yaml = await readFile(discovered!, 'utf8')
-    expect([...parseLexicon(yaml)]).toEqual([
+    const discovered = await readProjectLexicons(root)
+    expect(discovered).toHaveLength(1)
+    expect([...parseLexicon(discovered[0]!)]).toEqual([
       'block',
       'x.mtext.move',
       'replace the text',
@@ -110,8 +110,8 @@ describe('lexicon file discovery and parsing', () => {
 
   it('yields an empty set when the project has no lexicon file', async () => {
     const root = await project()
-    const discovered = await findLexiconFile(root)
-    expect(discovered).toBeNull()
+    const discovered = await readProjectLexicons(root)
+    expect(discovered).toEqual([])
     expect(parseLexicon('')).toEqual(new Set())
   })
 })

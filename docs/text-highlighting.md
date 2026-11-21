@@ -85,14 +85,31 @@ spelling in the lexicon is the one that highlights.
 
 ## Lexicon file
 
-Discovery: the app walks `<project>/models/` breadth-first and reads the first
-`term-lexicon.yaml` (or `term-lexicon.yml`) it finds. The shallowest file wins;
-at equal depth the lexicographically smallest path relative to `models/` wins.
-Directories starting with `.` and `node_modules` are skipped, symlinked
-directories are never descended, the search stops 8 directory levels below
-`models/`, and a symlinked file is read only when it resolves inside the
-project. If no file exists (or it is unreadable) only classes 1 and 2
-highlight — no error is shown.
+Discovery: the app walks `<project>/models/` breadth-first and reads **every**
+`term-lexicon.yaml` (or `term-lexicon.yml`) it finds, in deterministic BFS
+order (directory entries sorted). Hidden directories and `node_modules` are
+skipped, symlinked directories are never descended, the search stops 8
+directory levels below `models/`, and a symlinked file is read only when it
+resolves inside the project.
+
+Each discovered lexicon may cite a sibling repository's lexicon in a
+column-0 header line `# Schema: <relative path>` (the first such line wins).
+The citation is resolved against the citing file's directory, one hop only:
+leading `..` components climb toward the shared parent, and the canonicalized
+import target must stay inside the canonicalized root reached by that climb.
+Absolute paths, drive/UNC citations, interior escapes and symlinked directories
+are rejected; the citation may name the schema document beside the lexicon (the
+lexicon is looked up in that directory) or the lexicon file directly. Missing
+or unreadable citations are skipped silently, and an imported lexicon's own
+citation is never followed. This lets a project like mText pull in the
+Protocols-owned terms (`Order`, `SyntaxNode`, `Document`, `Catena`, …) its
+architecture text relies on without changing discovery for projects that cite
+nothing.
+
+All texts are unioned after parsing; duplicate canonical paths are read once,
+each read is capped at 1 MiB, and the project's files come before imports. If
+no file exists (or none is readable) only classes 1 and 2 highlight — no error
+is shown.
 
 Accepted YAML shapes (dependency-free parser). Any non-empty scalar or key
 becomes a term, up to 120 characters: single words, PascalCase,
