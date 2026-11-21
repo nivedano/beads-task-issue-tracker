@@ -250,6 +250,92 @@ describe('parseLexicon', () => {
   it('parses a bare list that starts with a document marker', () => {
     expect([...parseLexicon('---\n- M1.2\n- M1.3\n...\n')]).toEqual(['M1.2', 'M1.3'])
   })
+
+  it('parses a top-level mapping whose keys are terms', () => {
+    const yaml = [
+      '---',
+      '# Architecture term lexicon',
+      'M1.2: the first milestone gloss',
+      '"arch.method.v2": "quoted key, quoted gloss # not a comment"',
+      "M1.2.3: 'single-quoted gloss'",
+      '...',
+      '',
+    ].join('\n')
+    expect([...parseLexicon(yaml)]).toEqual(['M1.2', 'arch.method.v2', 'M1.2.3'])
+  })
+
+  it('ignores mapping definition blocks and nested keys', () => {
+    const yaml = [
+      'M1.2:',
+      '  A free-text definition that mentions M9.9 in passing.',
+      '  nested: M9.8',
+      '  M9.7: nested key',
+      'M1.3: short gloss',
+      '  - M9.6',
+      'M1.4:',
+      '  ```',
+      '  code block',
+      '  ```',
+      '',
+    ].join('\n')
+    expect([...parseLexicon(yaml)]).toEqual(['M1.2', 'M1.3', 'M1.4'])
+  })
+
+  it('parses a sequence of single-key mappings', () => {
+    const yaml = ['- M1.2: gloss text', '- arch.method.v2:', '- "M1.3": quoted'].join('\n')
+    expect([...parseLexicon(yaml)]).toEqual(['M1.2', 'arch.method.v2', 'M1.3'])
+  })
+
+  it('parses a terms: block with mapping items and nested descriptions', () => {
+    const yaml = [
+      '---',
+      'terms:',
+      '  - M1.2: gloss text',
+      '  - M1.3:',
+      '      description: nested text',
+      '      M9.9: must not leak',
+      '  - "arch.method.v2"  # quoted scalar',
+      '...',
+      '',
+    ].join('\n')
+    expect([...parseLexicon(yaml)]).toEqual(['M1.2', 'M1.3', 'arch.method.v2'])
+  })
+
+  it('parses a terms: block written as a mapping', () => {
+    const yaml = ['terms:', '  M1.2: gloss', '  M1.3:'].join('\n')
+    expect([...parseLexicon(yaml)]).toEqual(['M1.2', 'M1.3'])
+  })
+
+  it('parses a flow sequence on the terms: key', () => {
+    expect([...parseLexicon('terms: [M1.2, "M1.3", not a term]')]).toEqual(['M1.2', 'M1.3'])
+  })
+
+  it('ignores non-identifier keys such as version and notes', () => {
+    const yaml = [
+      'version: 2',
+      'notes:',
+      '  owner: architecture',
+      '  M9.9: not a term key',
+      'title: plain text',
+      '',
+    ].join('\n')
+    expect(parseLexicon(yaml)).toEqual(new Set())
+  })
+
+  it('parses every shape mixed in one document', () => {
+    const yaml = [
+      'version: 2',
+      'terms:',
+      '  - M1.2',
+      '  - M1.3: gloss',
+      'M1.4: top-level gloss',
+      'M1.5:',
+      '  definition',
+      '- M1.6',
+      '',
+    ].join('\n')
+    expect([...parseLexicon(yaml)]).toEqual(['M1.2', 'M1.3', 'M1.4', 'M1.5', 'M1.6'])
+  })
 })
 
 describe('highlightElement', () => {

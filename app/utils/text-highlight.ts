@@ -195,51 +195,146 @@ function scalar(raw: string): string {
   return value
 }
 
+const INDENT = /^[ \t]*/
+
+/** Identifier-shaped scalar, or null. */
+function term(raw: string): string | null {
+  const value = scalar(raw)
+  return IDENTIFIER.test(value) ? value : null
+}
+
 /**
- * Parses the subset of YAML the architecture term lexicon uses:
+ * Splits `key: value` / `key:` at the first plain colon. `M1.2:x` and
+ * `http://…` are scalars, not mappings, so they yield null.
+ */
+function splitKey(text: string): { key: string, value: string } | null {
+  let quote: string | null = null
+  for (let index = 0; index < text.length; index++) {
+    const char = text[index]
+    if (quote !== null) {
+      if (char === quote) quote = null
+      continue
+    }
+    if (char === '"' || char === "'") {
+      quote = char
+      continue
+    }
+    if (char !== ':') continue
+    const rest = text.slice(index + 1)
+    if (rest.length === 0 || rest[0] === ' ') {
+      return { key: text.slice(0, index), value: rest.trim() }
+    }
+    return null
+  }
+  return null
+}
+
+/** Term from a sequence item: `- M1.2`, `- "M1.2"` or `- M1.2: gloss`. */
+function itemTerm(payload: string): string | null {
+  const raw = payload.trim()
+  if (raw.length === 0) return null
+  const mapping = splitKey(raw)
+  return mapping ? term(mapping.key) : term(raw)
+}
+
+/** Identifiers of a flow sequence (`terms: [M1.2, M1.3]`), or null. */
+function flowTerms(raw: string): string[] | null {
+  const value = raw.trim()
+  if (!value.startsWith('[') || !value.endsWith(']')) return null
+  return value
+    .slice(1, -1)
+    .split(',')
+    .map(part => term(part))
+    .filter((part): part is string => part !== null)
+}
+
+/**
+ * Parses the architecture term lexicon. Accepted shapes:
  *
  * ```yaml
- * terms:
- *   - M1.2
- *   - arch.method.v2
+ * - M1.2                     # top-level sequence of scalars
+ * terms:                     # terms: sequence (scalars or single-key mappings)
+ *   - M1.2: gloss
+ * M1.2: gloss                # top-level mapping, key is the term
+ * M1.3:
+ *   definition text          # ignored until the next column-0 key
  * ```
  *
- * A top-level sequence (`- term` at column 0) is accepted too. Comments and
- * surrounding quotes are stripped; entries that are not X.Y / X.Y.Z shaped are
- * ignored. Unsupported structures are skipped, never thrown on, so a partially
- * understood file still contributes what it can.
+ * Keys/scalars that are not X.Y / X.Y.Z shaped are ignored. Indented lines
+ * belong to the current entry (a definition block or a nested mapping) and
+ * contribute nothing unless they are entries of the `terms:` collection itself.
+ * Document markers, comments and surrounding quotes are handled; unsupported
+ * structures are skipped, never thrown on, so a partially understood file still
+ * contributes what it can.
  */
 export function parseLexicon(yaml: string): Set<string> {
   const terms = new Set<string>()
   if (!yaml) return terms
 
-  type Mode = 'root' | 'terms' | 'other'
-  let mode: Mode = 'root'
+  // Whether the open block is the `terms:` collection, and the indent at which
+  // its entries live (deeper lines belong to the current entry).
+  let inTerms = false
+  let entryIndent = -1
 
   for (const rawLine of yaml.split(/\r?\n/)) {
     const line = stripComment(rawLine)
+    if (line.trim().length === 0) continue
+    const indent = (INDENT.exec(line)?.[0] ?? '').length
     const trimmed = line.trim()
-    if (trimmed.length === 0) continue
+
     // YAML document markers carry no terms.
-    if (trimmed === '---' || trimmed === '...') continue
+    if (trimmed === '---' || trimmed === '...') {
+      inTerms = false
+      entryIndent = -1
+      continue
+    }
 
-    if (trimmed.startsWith('- ') || trimmed === '-') {
-      if (mode === 'root' || mode === 'terms') {
-        const term = scalar(trimmed.slice(1))
-        if (IDENTIFIER.test(term)) terms.add(term)
+    if (indent === 0) {
+      inTerms = false
+      entryIndent = -1
+
+      if (trimmed.startsWith('- ') || trimmed === '-') {
+        const found = itemTerm(trimmed.slice(1))
+        if (found) terms.add(found)
+        continue
       }
+
+      const entry = splitKey(trimmed)
+      if (!entry) continue
+      const name = scalar(entry.key)
+      if (name === 'terms') {
+        const flow = flowTerms(entry.value)
+        if (flow) {
+          for (const item of flow) terms.add(item)
+        } else if (entry.value.length === 0) {
+          inTerms = true
+        }
+        continue
+      }
+      const found = term(name)
+      if (found) terms.add(found)
       continue
     }
 
-    const key = /^([A-Za-z_][\w-]*)\s*:\s*(.*)$/.exec(trimmed)
-    if (key) {
-      const [, name, inline] = key
-      mode = name === 'terms' && (inline ?? '').trim().length === 0 ? 'terms' : 'other'
+    // Indented lines belong to the open entry/key and are skipped, except for
+    // the entries of the `terms:` collection itself.
+    if (!inTerms) continue
+    if (entryIndent < 0) entryIndent = indent
+    if (indent > entryIndent) continue
+    if (indent < entryIndent) {
+      inTerms = false
+      entryIndent = -1
       continue
     }
 
-    // Indented free text is a block scalar under some other key.
-    if (mode === 'root') mode = 'other'
+    let found: string | null
+    if (trimmed.startsWith('- ') || trimmed === '-') {
+      found = itemTerm(trimmed.slice(1))
+    } else {
+      const entry = splitKey(trimmed)
+      found = entry ? term(entry.key) : null
+    }
+    if (found) terms.add(found)
   }
 
   return terms

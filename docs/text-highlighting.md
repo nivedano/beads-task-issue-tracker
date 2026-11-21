@@ -74,29 +74,42 @@ tokens that merely look dotted (`plain.text` without a lexicon entry) stay plain
 
 ## Lexicon file
 
-Location: `<project>/models/architecture/term-lexicon.yaml`. If the file does not
-exist (or is unreadable) only classes 1 and 2 highlight — no error is shown.
+Discovery: the app walks `<project>/models/` breadth-first and reads the first
+`term-lexicon.yaml` (or `term-lexicon.yml`) it finds. The shallowest file wins;
+at equal depth the lexicographically smallest path relative to `models/` wins.
+Directories starting with `.` and `node_modules` are skipped, symlinked
+directories are never descended, the search stops 8 directory levels below
+`models/`, and a symlinked file is read only when it resolves inside the
+project. If no file exists (or it is unreadable) only classes 1 and 2
+highlight — no error is shown.
 
-Accepted YAML subset (dependency-free parser):
+Accepted YAML shapes (dependency-free parser). Only identifier-shaped keys or
+scalars become terms — `X.Y` / `X.Y.Z`, e.g. `M1.2` or `arch.method.v2`;
+anything else (`version:`, `notes:`, prose) is ignored:
 
 ```yaml
----
-# Architecture term lexicon
+# 1. top-level sequence of scalars
+- M1.2
+- arch.method.v2
+
+# 2. terms: block — scalars or single-key mappings
 terms:
   - M1.2          # comments are stripped
-  - arch.method.v2
   - "quoted.term" # surrounding quotes are stripped
-...
+  - M1.3: gloss
+
+# 3. top-level mapping whose keys are the terms
+M1.2: gloss text
+M1.3:
+  Free-text definition (ignored, as is every indented line under a term).
 ```
 
-A bare top-level sequence (`- M1.2` at column 0, no `terms:` key) is accepted
-too. YAML document markers (`---`, `...`) carry no terms and are ignored before
-mode tracking, so a file that starts with `---` still parses.
-
-Entries that do not match the `X.Y` / `X.Y.Z` identifier shape are ignored.
-Unsupported structures (mappings, block scalars, other keys) are skipped
-gracefully, so a partially understood file still contributes what it can.
-Duplicates collapse.
+A `terms:` block may also be written as a mapping or as a flow sequence
+(`terms: [M1.2, M1.3]`). Definition text and nested keys never contribute
+terms: indented lines belong to the current key/entry until the next column-0
+key. YAML document markers (`---`, `...`) carry no terms and are skipped, CRLF
+files parse the same, and unsupported structures are skipped gracefully, so a
+partially understood file still contributes what it can. Duplicates collapse.
 
 ## Theme variables
 
@@ -147,10 +160,11 @@ Bound surfaces:
   observation note)
 
 Backend reads: Rust `read_lexicon` (`src-tauri/src/grace/mod.rs`) and the web
-parity route `server/api/grace/lexicon.get.ts`; both canonicalize under the
-project root and cap at 1 MiB. The route's containment check uses
-`path.relative` (`server/utils/lexicon-path.ts`) so a project that *is* a
-filesystem root (`D:\`, `/`) is accepted; symlink escapes are refused by
+parity route `server/api/grace/lexicon.get.ts`; both discover the file under
+`models/` with the same rules, canonicalize under the project root and cap at
+1 MiB. The route's walk and containment check live in
+`server/utils/lexicon-path.ts` (`path.relative` semantics) so a project that
+*is* a filesystem root (`D:\`, `/`) is accepted; symlink escapes are refused by
 `realpath` + containment. The frontend wrapper is `graceReadLexicon` in
 `app/utils/br-api.ts` (invoke in Tauri, `$fetch` in web).
 
