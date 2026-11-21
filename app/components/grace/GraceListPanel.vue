@@ -147,25 +147,28 @@ const handleSort = (field: GraceSortField, direction: 'asc' | 'desc') => {
       @reset-columns="resetColumns"
     />
 
-    <GraceFilterChips
-      :stage-filters="filters.stage"
-      :authorization-filters="filters.authorization"
-      :scope="filters.scope"
-      @remove-stage="toggleStage"
-      @remove-authorization="toggleAuthorization"
-      @reset-scope="selectScope('all')"
-      @clear-all="emit('clear-filters')"
-    />
+    <!-- The chip row and the loading note share one line: neither may add a
+         row above the table, where the table is the sole scroll owner. -->
+    <div
+      v-if="isLoading || filters.stage.length > 0 || filters.authorization.length > 0 || filters.scope !== 'all'"
+      class="flex flex-wrap items-center gap-1.5"
+    >
+      <GraceFilterChips
+        :stage-filters="filters.stage"
+        :authorization-filters="filters.authorization"
+        :scope="filters.scope"
+        @remove-stage="toggleStage"
+        @remove-authorization="toggleAuthorization"
+        @reset-scope="selectScope('all')"
+        @clear-all="emit('clear-filters')"
+      />
+      <span v-if="isLoading" class="ml-auto text-xs text-muted-foreground">Loading…</span>
+    </div>
   </div>
 
-  <div class="flex-1 overflow-auto p-4">
-    <div class="flex items-center justify-between pb-2">
-      <span class="text-xs text-muted-foreground">
-        {{ filteredChanges.length }} {{ filteredChanges.length === 1 ? 'change' : 'changes' }}
-      </span>
-      <span v-if="isLoading" class="text-xs text-muted-foreground">Loading…</span>
-    </div>
-
+  <!-- No padding/scroller here: GraceTable owns the only scroll surface, and
+       the pane's height (flex-1 + min-h-0) is what makes h-full resolve. -->
+  <div class="flex-1 min-h-0 px-4 pb-4">
     <GraceTable
       :changes="filteredChanges"
       :columns="tableColumns"
