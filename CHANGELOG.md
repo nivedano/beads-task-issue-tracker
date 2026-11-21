@@ -12,6 +12,11 @@
   command names are unchanged as the Tauri API; they now target `br` exclusively.
 
 ### Fixed
+- Prose highlighting: lexicon terms highlight by **membership**, not dotted shape — every term
+  defined in the project lexicon (single words, PascalCase, SCREAMING_SNAKE, hyphenated, dotted and
+  phrases with spaces) now highlights; the parser also reads the real self-describing
+  `schema/tree/owner/entries: - term: …` schema. Term matches are boundary-guarded and the combined
+  pattern is cached per lexicon set.
 - Prose highlighting: tables stay plain (`TABLE` subtrees skipped); bare relative
   path matches consume whole extensions, are bounded to 64-char segments and no
   longer stop mid-token; nested/reused `v-highlight` roots no longer reorder or
@@ -25,7 +30,7 @@
   acceptance criteria) and GRACE notes, contracts and record statements highlight three classes —
   local paths/URLs (underline + blue), documentation ids such as `UC-12`, `DR-MSR-001`, `C-0019`
   and `iss-1234` (violet pill), and terms from `<project>/models/architecture/term-lexicon.yaml`
-  (sand accent, only defined `X.Y`/`X.Y.Z` terms). Applied post-sanitization as a DOM walk, so code
+  (sand accent, only terms defined in the lexicon). Applied post-sanitization as a DOM walk, so code
   blocks, tables, links and logs are untouched; a missing lexicon file degrades to the first two
   classes. Colors adapt across all four themes. See `docs/text-highlighting.md`
 - **GRACE explorer (desktop, read-only)**: beside the issue explorer, a project with a `.grace5/`

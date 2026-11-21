@@ -15,7 +15,9 @@ export interface HighlightSegment {
 
 /**
  * Class definitions as ordered data. The order is the precedence order at the
- * same start offset (leftmost match still wins across offsets).
+ * same start offset (leftmost match still wins across offsets). The lexicon
+ * class carries no static pattern: its alternatives are built from the term
+ * set supplied to `tokenizeHighlights` (see `lexiconPattern`).
  */
 const SEGMENT = String.raw`[A-Za-z0-9_.()\[\]{}-]{1,64}`
 // A path match may not stop in the middle of a token: no trailing word char,
@@ -54,16 +56,18 @@ export const HIGHLIGHT_CLASSES = [
   {
     cls: 'hl-lexicon',
     token: 'lexicon',
-    // Upper bound of three segments; leading letter keeps decimals out.
-    pattern: String.raw`(?<![\w.-])[A-Za-z][A-Za-z0-9_-]*(?:\.[A-Za-z0-9][A-Za-z0-9_-]*){1,2}(?!\.[A-Za-z0-9])`,
+    pattern: null,
   },
-] as const satisfies readonly { cls: HighlightClass, token: string, pattern: string }[]
+] as const satisfies readonly { cls: HighlightClass, token: string, pattern: string | null }[]
 
 export const HIGHLIGHT_CLASS_NAMES: readonly HighlightClass[] =
   HIGHLIGHT_CLASSES.map(definition => definition.cls)
 
-const COMBINED = new RegExp(
-  HIGHLIGHT_CLASSES.map(definition => `(?<${definition.token}>${definition.pattern})`).join('|'),
+const STATIC_COMBINED = new RegExp(
+  HIGHLIGHT_CLASSES
+    .filter(definition => definition.pattern !== null)
+    .map(definition => `(?<${definition.token}>${definition.pattern})`)
+    .join('|'),
   'g',
 )
 
@@ -106,9 +110,46 @@ export function trimRef(raw: string): string {
 }
 
 /**
+ * A lexicon term never matches inside a longer token: the character before it
+ * and the character after it must not continue the same word/dotted/hyphenated
+ * run. A trailing sentence period is allowed (`Order.` highlights `Order`),
+ * while a dotted continuation is not (`M1.2` does not match in `M1.2.3`).
+ */
+const TERM_LEAD = String.raw`(?<![A-Za-z0-9_.-])`
+const TERM_TRAIL = String.raw`(?![A-Za-z0-9_-])(?!\.[A-Za-z0-9])`
+
+const LEXICON_PATTERNS = new WeakMap<ReadonlySet<string>, RegExp | null>()
+
+function escapeRegExpLiteral(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+/**
+ * Combined alternation of every defined term, longest first so a phrase wins
+ * over its prefix (`move up` before `move`). Compiled once per set identity
+ * and cached: the DOM walk calls the tokenizer per text node.
+ */
+function lexiconPattern(lexicon: ReadonlySet<string>): RegExp | null {
+  const cached = LEXICON_PATTERNS.get(lexicon)
+  if (cached !== undefined || LEXICON_PATTERNS.has(lexicon)) return cached ?? null
+
+  const terms = [...lexicon]
+    .filter(term => term.length > 0)
+    .sort((left, right) => right.length - left.length || (left === right ? 0 : left < right ? -1 : 1))
+
+  let pattern: RegExp | null = null
+  if (terms.length > 0) {
+    const alternatives = terms.map(escapeRegExpLiteral).join('|')
+    pattern = new RegExp(`${TERM_LEAD}(?:${alternatives})${TERM_TRAIL}`, 'g')
+  }
+  LEXICON_PATTERNS.set(lexicon, pattern)
+  return pattern
+}
+
+/**
  * Splits prose into plain text and highlight segments in one pass.
- * Leftmost match wins; ref > docid > lexicon at the same offset. Lexicon
- * candidates are only tagged when they are members of `lexicon`.
+ * Leftmost match wins; ref > docid > lexicon at the same offset. Lexicon terms
+ * are exactly the members of `lexicon`, whatever their shape.
  */
 export function tokenizeHighlights(
   text: string,
@@ -128,30 +169,54 @@ export function tokenizeHighlights(
     segments.push({ text: value, cls })
   }
 
-  COMBINED.lastIndex = 0
-  let cursor = 0
-  let match: RegExpExecArray | null
+  const lexiconRegex = lexicon.size > 0 ? lexiconPattern(lexicon) : null
+  const nextStatic = (from: number): RegExpExecArray | null => {
+    STATIC_COMBINED.lastIndex = from
+    return STATIC_COMBINED.exec(text)
+  }
+  const nextLexicon = (from: number): RegExpExecArray | null => {
+    if (lexiconRegex === null) return null
+    lexiconRegex.lastIndex = from
+    return lexiconRegex.exec(text)
+  }
 
-  while ((match = COMBINED.exec(text)) !== null) {
-    const groups = match.groups ?? {}
+  let cursor = 0
+  let staticMatch = nextStatic(0)
+  let lexiconMatch = nextLexicon(0)
+
+  while (staticMatch !== null || lexiconMatch !== null) {
+    // A losing pattern may still point inside already-consumed prose.
+    if (staticMatch !== null && staticMatch.index < cursor) staticMatch = nextStatic(cursor)
+    if (lexiconMatch !== null && lexiconMatch.index < cursor) lexiconMatch = nextLexicon(cursor)
+    if (staticMatch === null && lexiconMatch === null) break
+
+    // Leftmost wins; at the same offset the static classes precede the lexicon.
+    const useStatic = lexiconMatch === null
+      || (staticMatch !== null && staticMatch.index <= lexiconMatch.index)
+    const match = (useStatic ? staticMatch : lexiconMatch)!
     const raw = match[0]
     const start = match.index
-    const ref = groups.ref
-    const docid = groups.docid
 
     let cls: HighlightClass | undefined
     let value = raw
 
-    if (ref !== undefined) {
-      value = trimRef(raw)
-      if (value.length > 0) cls = 'hl-ref'
-    } else if (docid !== undefined) {
-      cls = 'hl-docid'
-    } else if (groups.lexicon !== undefined && lexicon.has(raw)) {
+    if (useStatic) {
+      const groups = match.groups ?? {}
+      if (groups.ref !== undefined) {
+        value = trimRef(raw)
+        if (value.length > 0) cls = 'hl-ref'
+      } else if (groups.docid !== undefined) {
+        cls = 'hl-docid'
+      }
+      if (cls === undefined) {
+        staticMatch = nextStatic(start + 1)
+        continue
+      }
+      staticMatch = nextStatic(start + raw.length)
+    } else {
       cls = 'hl-lexicon'
+      lexiconMatch = nextLexicon(start + raw.length)
     }
-
-    if (cls === undefined) continue
 
     push(text.slice(cursor, start))
     push(value, cls)
@@ -163,8 +228,6 @@ export function tokenizeHighlights(
   push(text.slice(cursor))
   return segments
 }
-
-const IDENTIFIER = /^[A-Za-z][A-Za-z0-9_-]*(?:\.[A-Za-z0-9][A-Za-z0-9_-]*){1,2}$/
 
 /** Removes a YAML comment that is not inside a quoted scalar. */
 function stripComment(line: string): string {
@@ -197,10 +260,27 @@ function scalar(raw: string): string {
 
 const INDENT = /^[ \t]*/
 
-/** Identifier-shaped scalar, or null. */
+const MAX_TERM_LENGTH = 120
+
+/** Top-level keys that describe the file, never a term. */
+const STRUCTURAL_KEYS: Record<string, true> = {
+  schema: true,
+  tree: true,
+  owner: true,
+  version: true,
+  notes: true,
+  description: true,
+  terms: true,
+  entries: true,
+  categories: true,
+  metadata: true,
+}
+
+/** A term scalar of any shape, or null when empty or unreasonably long. */
 function term(raw: string): string | null {
   const value = scalar(raw)
-  return IDENTIFIER.test(value) ? value : null
+  if (value.length === 0 || value.length > MAX_TERM_LENGTH) return null
+  return value
 }
 
 /**
@@ -229,15 +309,32 @@ function splitKey(text: string): { key: string, value: string } | null {
   return null
 }
 
-/** Term from a sequence item: `- M1.2`, `- "M1.2"` or `- M1.2: gloss`. */
-function itemTerm(payload: string): string | null {
+/**
+ * Term from a sequence item: `- block`, `- "replace the text"`, `- M1.2: gloss`
+ * or the self-describing `- term: block`. `termFieldOnly` marks the `entries:`
+ * collection, whose mapping items carry the term in the `term:` field and whose
+ * other fields (`namespace:`, `area:`, …) are not terms.
+ */
+function itemTerm(payload: string, termFieldOnly: boolean): string | null {
   const raw = payload.trim()
   if (raw.length === 0) return null
   const mapping = splitKey(raw)
-  return mapping ? term(mapping.key) : term(raw)
+  if (!mapping) return term(raw)
+  const key = scalar(mapping.key)
+  if (key === 'term') return term(mapping.value)
+  return termFieldOnly ? null : term(key)
 }
 
-/** Identifiers of a flow sequence (`terms: [M1.2, M1.3]`), or null. */
+/** Term from a mapping line inside a collection (`M1.2: gloss` / `term: block`). */
+function mappingTerm(payload: string, termFieldOnly: boolean): string | null {
+  const mapping = splitKey(payload)
+  if (!mapping) return null
+  const key = scalar(mapping.key)
+  if (key === 'term') return term(mapping.value)
+  return termFieldOnly ? null : term(key)
+}
+
+/** Terms of a flow sequence (`terms: [block, "replace the text"]`), or null. */
 function flowTerms(raw: string): string[] | null {
   const value = raw.trim()
   if (!value.startsWith('[') || !value.endsWith(']')) return null
@@ -252,28 +349,43 @@ function flowTerms(raw: string): string[] | null {
  * Parses the architecture term lexicon. Accepted shapes:
  *
  * ```yaml
- * - M1.2                     # top-level sequence of scalars
- * terms:                     # terms: sequence (scalars or single-key mappings)
- *   - M1.2: gloss
- * M1.2: gloss                # top-level mapping, key is the term
- * M1.3:
- *   definition text          # ignored until the next column-0 key
+ * # 1. top-level sequence of scalars
+ * - block
+ * - replace the text
+ *
+ * # 2. terms: block — scalars or single-key mappings
+ * terms:
+ *   - block
+ *   - "replace the text"
+ *   - x.mtext.move: gloss
+ *
+ * # 3. top-level mapping whose keys are the terms
+ * block: gloss text
+ *
+ * # 4. the self-describing term-lexicon/v1 wrapper
+ * schema: term-lexicon/v1
+ * entries:
+ *   - term: replace the text
+ *     namespace: mtext
  * ```
  *
- * Keys/scalars that are not X.Y / X.Y.Z shaped are ignored. Indented lines
- * belong to the current entry (a definition block or a nested mapping) and
- * contribute nothing unless they are entries of the `terms:` collection itself.
- * Document markers, comments and surrounding quotes are handled; unsupported
- * structures are skipped, never thrown on, so a partially understood file still
- * contributes what it can.
+ * Terms may have any shape (a single word, PascalCase, SCREAMING_SNAKE,
+ * hyphenated, dotted, or a phrase with spaces) up to 120 characters; empty
+ * values are ignored. Indented lines belong to the open entry (its definition
+ * block or fields) and contribute nothing unless they are entries of the
+ * `terms:` / `entries:` collection itself. Structural top-level keys
+ * (`schema:`, `tree:`, `owner:`, `version:`, `notes:`, `terms:`, `entries:` …)
+ * are never terms. Document markers, comments and surrounding quotes are
+ * handled; unsupported structures are skipped, never thrown on, so a partially
+ * understood file still contributes what it can.
  */
 export function parseLexicon(yaml: string): Set<string> {
   const terms = new Set<string>()
   if (!yaml) return terms
 
-  // Whether the open block is the `terms:` collection, and the indent at which
-  // its entries live (deeper lines belong to the current entry).
-  let inTerms = false
+  // Which collection is open, and the indent at which its entries live
+  // (deeper lines belong to the current entry).
+  let collection: 'terms' | 'entries' | null = null
   let entryIndent = -1
 
   for (const rawLine of yaml.split(/\r?\n/)) {
@@ -284,17 +396,17 @@ export function parseLexicon(yaml: string): Set<string> {
 
     // YAML document markers carry no terms.
     if (trimmed === '---' || trimmed === '...') {
-      inTerms = false
+      collection = null
       entryIndent = -1
       continue
     }
 
     if (indent === 0) {
-      inTerms = false
+      collection = null
       entryIndent = -1
 
       if (trimmed.startsWith('- ') || trimmed === '-') {
-        const found = itemTerm(trimmed.slice(1))
+        const found = itemTerm(trimmed.slice(1), false)
         if (found) terms.add(found)
         continue
       }
@@ -302,38 +414,37 @@ export function parseLexicon(yaml: string): Set<string> {
       const entry = splitKey(trimmed)
       if (!entry) continue
       const name = scalar(entry.key)
-      if (name === 'terms') {
+
+      if (name === 'terms' || name === 'entries') {
         const flow = flowTerms(entry.value)
         if (flow) {
           for (const item of flow) terms.add(item)
         } else if (entry.value.length === 0) {
-          inTerms = true
+          collection = name
         }
         continue
       }
+      if (STRUCTURAL_KEYS[name] === true) continue
       const found = term(name)
       if (found) terms.add(found)
       continue
     }
 
     // Indented lines belong to the open entry/key and are skipped, except for
-    // the entries of the `terms:` collection itself.
-    if (!inTerms) continue
+    // the entries of the `terms:` / `entries:` collection itself.
+    if (collection === null) continue
     if (entryIndent < 0) entryIndent = indent
     if (indent > entryIndent) continue
     if (indent < entryIndent) {
-      inTerms = false
+      collection = null
       entryIndent = -1
       continue
     }
 
-    let found: string | null
-    if (trimmed.startsWith('- ') || trimmed === '-') {
-      found = itemTerm(trimmed.slice(1))
-    } else {
-      const entry = splitKey(trimmed)
-      found = entry ? term(entry.key) : null
-    }
+    const termFieldOnly = collection === 'entries'
+    const found = (trimmed.startsWith('- ') || trimmed === '-')
+      ? itemTerm(trimmed.slice(1), termFieldOnly)
+      : mappingTerm(trimmed, termFieldOnly)
     if (found) terms.add(found)
   }
 

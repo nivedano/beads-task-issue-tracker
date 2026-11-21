@@ -66,11 +66,22 @@ plain.
 
 ### 3. `hl-lexicon` — architecture lexicon terms
 
-Sand/amber accent, medium weight. A dotted token is highlighted only when it is
-**defined in the project's term lexicon** (exact membership check). The candidate
-shape is `X.Y` or `X.Y.Z` — a leading letter, then one or two dotted segments,
-e.g. `M1.2` or `arch.method.v2`. Four-segment chains, decimals (`1.2.3`) and
-tokens that merely look dotted (`plain.text` without a lexicon entry) stay plain.
+Sand/amber accent, medium weight. A term is highlighted exactly when it is
+**defined in the project's term lexicon** (exact membership check); its shape
+does not matter. Single words (`Order`, `block`), PascalCase (`SyntaxNode`),
+SCREAMING_SNAKE (`UNTITLED_NODE`, `METATEXT_JSON_VERSION`), hyphenated
+(`title-root`, `root-entry`), dotted (`M1.2`, `x.mtext.move`, `document.title`)
+and multi-word phrases (`replace the text`, `move up`) all highlight.
+
+The combined pattern is an alternation built from the lexicon set, with terms
+sorted longest-first so a phrase wins over its prefix (`move up` over `move`).
+It is cached per set identity (`WeakMap`), so DOM walks do not recompile it per
+text node; an empty set adds no lexicon scanning at all. Matches are
+boundary-guarded so a term never matches inside a longer token — `Order` does
+not match in `Ordering`, `M1.2` does not match in `M1.2.3`, and `title-root`
+does not match in `title-root-protocol`. A trailing sentence period is allowed
+(`Order.` highlights `Order`). Matching is case-sensitive: the canonical
+spelling in the lexicon is the one that highlights.
 
 ## Lexicon file
 
@@ -83,33 +94,50 @@ directories are never descended, the search stops 8 directory levels below
 project. If no file exists (or it is unreadable) only classes 1 and 2
 highlight — no error is shown.
 
-Accepted YAML shapes (dependency-free parser). Only identifier-shaped keys or
-scalars become terms — `X.Y` / `X.Y.Z`, e.g. `M1.2` or `arch.method.v2`;
-anything else (`version:`, `notes:`, prose) is ignored:
+Accepted YAML shapes (dependency-free parser). Any non-empty scalar or key
+becomes a term, up to 120 characters: single words, PascalCase,
+SCREAMING_SNAKE, hyphenated, dotted and phrases with spaces. Structural
+top-level keys (`schema:`, `tree:`, `owner:`, `version:`, `notes:`,
+`description:`, `terms:`, `entries:`, `categories:`, `metadata:`) are never
+terms.
 
 ```yaml
-# 1. top-level sequence of scalars
-- M1.2
-- arch.method.v2
+# 1. the self-describing term-lexicon/v1 wrapper (real lexicons)
+schema: term-lexicon/v1
+tree: mtext
+owner: mtext
+entries:
+  - term: replace the text   # the term field is the term
+    namespace: mtext
+    definition: models/architecture/metatext-model.md#operations
+    collisions:              # nested fields are never terms
+      - reading: another reading
+        rule: qualify
 
-# 2. terms: block — scalars or single-key mappings
+# 2. top-level sequence of scalars
+- M1.2
+- Order
+
+# 3. terms: block — scalars or single-key mappings
 terms:
   - M1.2          # comments are stripped
-  - "quoted.term" # surrounding quotes are stripped
+  - "quoted term" # surrounding quotes are stripped
   - M1.3: gloss
 
-# 3. top-level mapping whose keys are the terms
+# 4. top-level mapping whose keys are the terms
 M1.2: gloss text
-M1.3:
+SyntaxNode:
   Free-text definition (ignored, as is every indented line under a term).
 ```
 
 A `terms:` block may also be written as a mapping or as a flow sequence
-(`terms: [M1.2, M1.3]`). Definition text and nested keys never contribute
-terms: indented lines belong to the current key/entry until the next column-0
-key. YAML document markers (`---`, `...`) carry no terms and are skipped, CRLF
-files parse the same, and unsupported structures are skipped gracefully, so a
-partially understood file still contributes what it can. Duplicates collapse.
+(`terms: [M1.2, Order]`); the `entries:` collection accepts the same list
+forms, with mapping items carrying the term in their `term:` field. Definition
+text and nested keys never contribute terms: indented lines belong to the
+current key/entry until the next column-0 key. YAML document markers (`---`,
+`...`) carry no terms and are skipped, CRLF files parse the same, and
+unsupported structures are skipped gracefully, so a partially understood file
+still contributes what it can. Duplicates collapse.
 
 ## Theme variables
 

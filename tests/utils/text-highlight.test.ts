@@ -150,9 +150,95 @@ describe('tokenizeHighlights', () => {
     ])
   })
 
-  it('rejects dotted tokens outside the X.Y/X.Y.Z shape', () => {
-    expect(tokenizeHighlights('a.b.c.d and plain.text', new Set(['a.b.c.d']))).toEqual([
-      seg('a.b.c.d and plain.text'),
+  it('marks single-word, PascalCase, SCREAMING_SNAKE and hyphenated terms', () => {
+    const lexicon = new Set(['Order', 'SyntaxNode', 'UNTITLED_NODE', 'title-root'])
+    expect(tokenizeHighlights('Order, SyntaxNode, UNTITLED_NODE, title-root', lexicon)).toEqual([
+      seg('Order', LEX),
+      seg(', '),
+      seg('SyntaxNode', LEX),
+      seg(', '),
+      seg('UNTITLED_NODE', LEX),
+      seg(', '),
+      seg('title-root', LEX),
+    ])
+  })
+
+  it('marks phrase terms with spaces, preferring the longest term', () => {
+    const lexicon = new Set(['move', 'move up', 'move up by one', 'replace the text'])
+    expect(tokenizeHighlights('move up by one, then replace the text', lexicon)).toEqual([
+      seg('move up by one', LEX),
+      seg(', then '),
+      seg('replace the text', LEX),
+    ])
+    expect(tokenizeHighlights('move up', lexicon)).toEqual([seg('move up', LEX)])
+  })
+
+  it('marks dotted terms of any depth', () => {
+    expect(tokenizeHighlights('a.b.c.d and M1.2', new Set(['a.b.c.d', 'M1.2']))).toEqual([
+      seg('a.b.c.d', LEX),
+      seg(' and '),
+      seg('M1.2', LEX),
+    ])
+  })
+
+  it('rejects lexicon partial-token matches', () => {
+    const lexicon = new Set(['Order', 'M1.2', 'title-root', 'root'])
+    expect(tokenizeHighlights('Ordering aOrder Order.', lexicon)).toEqual([
+      seg('Ordering aOrder '),
+      seg('Order', LEX),
+      seg('.'),
+    ])
+    expect(tokenizeHighlights('M1.2.3 M1.2', lexicon)).toEqual([
+      seg('M1.2.3 '),
+      seg('M1.2', LEX),
+    ])
+    expect(tokenizeHighlights('title-root-protocol title-root', lexicon)).toEqual([
+      seg('title-root-protocol '),
+      seg('title-root', LEX),
+    ])
+  })
+
+  it('leaves terms plain when the lexicon does not define them', () => {
+    expect(tokenizeHighlights('Order and title-root', new Set(['block']))).toEqual([
+      seg('Order and title-root'),
+    ])
+  })
+
+  it('keeps ref > docid > lexicon precedence at the same offset', () => {
+    expect(tokenizeHighlights('models/a/M1.2.md', new Set(['M1.2']))).toEqual([
+      seg('models/a/M1.2.md', REF),
+    ])
+    expect(tokenizeHighlights('C-0019', new Set(['C-0019']))).toEqual([
+      seg('C-0019', DOCID),
+    ])
+  })
+
+  it('rebuilds the term pattern when the set changes', () => {
+    expect(tokenizeHighlights('Order and block', new Set(['Order']))).toEqual([
+      seg('Order', LEX),
+      seg(' and block'),
+    ])
+    expect(tokenizeHighlights('Order and block', new Set(['block']))).toEqual([
+      seg('Order and '),
+      seg('block', LEX),
+    ])
+    const first = new Set(['Order'])
+    expect(tokenizeHighlights('Order and block', first)).toEqual([
+      seg('Order', LEX),
+      seg(' and block'),
+    ])
+    expect(tokenizeHighlights('Order and block', new Set(['Order', 'block']))).toEqual([
+      seg('Order', LEX),
+      seg(' and '),
+      seg('block', LEX),
+    ])
+  })
+
+  it('escapes regex metacharacters in terms', () => {
+    expect(tokenizeHighlights('CodeMirror 6 and Node.js', new Set(['CodeMirror 6', 'Node.js']))).toEqual([
+      seg('CodeMirror 6', LEX),
+      seg(' and '),
+      seg('Node.js', LEX),
     ])
   })
 
@@ -190,16 +276,25 @@ describe('tokenizeHighlights', () => {
 })
 
 describe('parseLexicon', () => {
-  it('parses a top-level sequence, stripping comments and quotes', () => {
+  it('parses a top-level sequence of terms of any shape', () => {
     const yaml = [
       '# Architecture lexicon',
       '- M1.2',
       "- 'M1.3'  # quoted entry",
       '- "arch.method.v2"',
+      '- Order',
+      '- NOT_LOADED',
       '- not a term',
       '',
     ].join('\n')
-    expect([...parseLexicon(yaml)]).toEqual(['M1.2', 'M1.3', 'arch.method.v2'])
+    expect([...parseLexicon(yaml)]).toEqual([
+      'M1.2',
+      'M1.3',
+      'arch.method.v2',
+      'Order',
+      'NOT_LOADED',
+      'not a term',
+    ])
   })
 
   it('parses a terms: key with an indented sequence', () => {
@@ -307,11 +402,19 @@ describe('parseLexicon', () => {
   })
 
   it('parses a flow sequence on the terms: key', () => {
-    expect([...parseLexicon('terms: [M1.2, "M1.3", not a term]')]).toEqual(['M1.2', 'M1.3'])
+    expect([...parseLexicon('terms: [M1.2, "M1.3", Order, not a term]')]).toEqual([
+      'M1.2',
+      'M1.3',
+      'Order',
+      'not a term',
+    ])
   })
 
-  it('ignores non-identifier keys such as version and notes', () => {
+  it('ignores structural keys but keeps non-dotted term keys', () => {
     const yaml = [
+      'schema: term-lexicon/v1',
+      'tree: mtext',
+      'owner: mtext',
       'version: 2',
       'notes:',
       '  owner: architecture',
@@ -319,7 +422,69 @@ describe('parseLexicon', () => {
       'title: plain text',
       '',
     ].join('\n')
-    expect(parseLexicon(yaml)).toEqual(new Set())
+    expect([...parseLexicon(yaml)]).toEqual(['title'])
+  })
+
+  it('parses the self-describing entries: schema and ignores entry fields', () => {
+    const yaml = [
+      '# Term lexicon',
+      'schema: term-lexicon/v1',
+      'tree: mtext',
+      'owner: mtext',
+      'entries:',
+      '',
+      '  # ---- document domain ----',
+      '  - term: block',
+      '    namespace: mtext',
+      '    definition: models/architecture/outliner.md#blocks',
+      '    maps_to: mdm:SyntaxNode',
+      '    collisions:',
+      '      - reading: a programming-language block',
+      '        rule: qualify',
+      '',
+      '  - term: replace the text',
+      '    namespace: mtext',
+      '    note: \'classification: local operation\'',
+      '',
+      '  - term: UNTITLED_NODE',
+      '    namespace: platform',
+      '',
+    ].join('\n')
+    expect([...parseLexicon(yaml)]).toEqual(['block', 'replace the text', 'UNTITLED_NODE'])
+  })
+
+  it('parses non-dotted terms in every supported shape', () => {
+    const yaml = [
+      'Order: the boundary structure',
+      '- SyntaxNode',
+      'terms:',
+      '  - UNTITLED_NODE',
+      '  - x.mtext.move: gloss',
+      '  - "replace the text"',
+      '  NOT_LOADED: mapping form',
+      '',
+    ].join('\n')
+    expect([...parseLexicon(yaml)]).toEqual([
+      'Order',
+      'SyntaxNode',
+      'UNTITLED_NODE',
+      'x.mtext.move',
+      'replace the text',
+      'NOT_LOADED',
+    ])
+  })
+
+  it('drops empty and over-long values', () => {
+    const long = 'a'.repeat(121)
+    const yaml = [
+      '- ""',
+      "- ''",
+      '- ',
+      `- ${long}`,
+      '- Reasonable term',
+      '',
+    ].join('\n')
+    expect([...parseLexicon(yaml)]).toEqual(['Reasonable term'])
   })
 
   it('parses every shape mixed in one document', () => {

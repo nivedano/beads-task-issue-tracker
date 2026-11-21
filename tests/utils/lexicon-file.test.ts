@@ -52,6 +52,62 @@ describe('lexicon file discovery and parsing', () => {
     expect([...parseLexicon(yaml)]).toEqual(['M1.2', 'arch.method.v2'])
   })
 
+  it('parses the self-describing entries: schema used by real lexicons', async () => {
+    const root = await project()
+    const file = join(root, 'models', 'architecture', 'term-lexicon.yaml')
+    await mkdir(dirname(file), { recursive: true })
+    await writeFile(
+      file,
+      [
+        '# Term lexicon — mText (surface population).',
+        'schema: term-lexicon/v1',
+        'tree: mtext',
+        'owner: mtext',
+        'entries:',
+        '',
+        '  # ---- document domain ----',
+        '  - term: block',
+        '    namespace: mtext',
+        '    area: document-domain',
+        '    definition: models/architecture/outliner.md#blocks',
+        '    maps_to: mdm:SyntaxNode',
+        '    relation: surface_of',
+        '    note: \'classification: surface reading of mdm:SyntaxNode\'',
+        '',
+        '  # ---- protocol ----',
+        '  - term: x.mtext.move',
+        '    namespace: protocol',
+        '    area: operations',
+        '    kind: protocol-act',
+        '',
+        '  - term: replace the text',
+        '    namespace: mtext',
+        '    area: operations',
+        '    kind: operation',
+        '',
+        '  - term: root-entry',
+        '    namespace: mtext',
+        '    area: operations',
+        '    kind: refusal',
+        '',
+        '  - term: NOT_LOADED',
+        '    namespace: platform',
+        '',
+      ].join('\n'),
+    )
+
+    const discovered = await findLexiconFile(root)
+    expect(discovered).not.toBeNull()
+    const yaml = await readFile(discovered!, 'utf8')
+    expect([...parseLexicon(yaml)]).toEqual([
+      'block',
+      'x.mtext.move',
+      'replace the text',
+      'root-entry',
+      'NOT_LOADED',
+    ])
+  })
+
   it('yields an empty set when the project has no lexicon file', async () => {
     const root = await project()
     const discovered = await findLexiconFile(root)
