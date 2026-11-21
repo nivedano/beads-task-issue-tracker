@@ -11,6 +11,15 @@
   (migration flow, Dolt badges, recursive `.beads` watching) is removed. The internal `bd_*`
   command names are unchanged as the Tauri API; they now target `br` exclusively.
 
+### Fixed
+- Prose highlighting: tables stay plain (`TABLE` subtrees skipped); bare relative
+  path matches consume whole extensions, are bounded to 64-char segments and no
+  longer stop mid-token; nested/reused `v-highlight` roots no longer reorder or
+  duplicate text; the lexicon parser accepts `---`/`...` document markers; `UC-`/
+  `DR-` ids no longer match partial tokens and `C-0019-retire-briefs` highlights
+  whole; light-theme colors meet 4.5:1 contrast; the web lexicon route accepts a
+  project at a drive root and still refuses symlink escapes.
+
 ### Features
 - **Prose syntax highlighting**: issue prose (description, comments, design/working notes,
   acceptance criteria) and GRACE notes, contracts and record statements highlight three classes —

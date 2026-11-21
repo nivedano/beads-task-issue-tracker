@@ -15,8 +15,6 @@
 import { watch, type Ref } from 'vue'
 import { HIGHLIGHT_CLASS_NAMES, tokenizeHighlights } from './text-highlight'
 
-const HIGHLIGHT_SELECTOR = HIGHLIGHT_CLASS_NAMES.map(cls => `.${cls}[data-text-highlight]`).join(', ')
-
 /** Subtrees that are never rewritten: code/logs, links, scripts and our spans. */
 const SKIP_SELECTOR = [
   'pre',
@@ -25,6 +23,9 @@ const SKIP_SELECTOR = [
   'script',
   'style',
   'textarea',
+  'table',
+  // A bound element never walks into another bound element.
+  '[data-highlight-root]',
   ...HIGHLIGHT_CLASS_NAMES.map(cls => `.${cls}`),
 ].join(', ')
 
@@ -52,15 +53,6 @@ export function clearHighlights(root: HTMLElement): void {
     }
     recordsByElement.delete(root)
   }
-
-  // Defensive sweep: spans marked by a prior module instance (e.g. HMR) are
-  // unwrapped so they never accumulate.
-  for (const span of [...root.querySelectorAll(HIGHLIGHT_SELECTOR)]) {
-    const parent = span.parentNode
-    if (!parent) continue
-    while (span.firstChild) parent.insertBefore(span.firstChild, span)
-    parent.removeChild(span)
-  }
 }
 
 function applyToTextNode(node: Text, lexicon: ReadonlySet<string>): HighlightRecord | null {
@@ -82,12 +74,9 @@ function applyToTextNode(node: Text, lexicon: ReadonlySet<string>): HighlightRec
     }
     const span = document.createElement('span')
     span.className = segment.cls
-    // Only spans this module created are unwrapped again; author-supplied
-    // `hl-*` markup is skipped instead.
-    span.dataset.textHighlight = 'true'
     span.textContent = segment.text
-    // Ref/docid spans reveal the matched text on hover; lexicon terms read as-is.
-    if (segment.cls !== 'hl-lexicon') span.title = segment.text
+    // Every highlight span reveals the matched text on hover.
+    span.title = segment.text
     inserted.push(span)
   }
 
@@ -106,7 +95,11 @@ export function highlightElement(root: HTMLElement, lexicon: ReadonlySet<string>
   const walker = root.ownerDocument.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
     acceptNode(node) {
       const parent = node.parentElement
-      if (!parent || parent.closest(SKIP_SELECTOR)) return NodeFilter.FILTER_REJECT
+      if (!parent) return NodeFilter.FILTER_REJECT
+      const skipped = parent.closest(SKIP_SELECTOR)
+      // The bound element itself is tagged as a root; only descendants that
+      // belong to a *different* skip subtree are refused.
+      if (skipped && skipped !== root) return NodeFilter.FILTER_REJECT
       return NodeFilter.FILTER_ACCEPT
     },
   })
@@ -125,6 +118,7 @@ export function highlightElement(root: HTMLElement, lexicon: ReadonlySet<string>
 }
 
 export interface HighlightDirective {
+  created: (el: HTMLElement) => void
   mounted: (el: HTMLElement) => void
   beforeUpdate: (el: HTMLElement) => void
   updated: (el: HTMLElement) => void
@@ -148,8 +142,18 @@ export function createHighlightDirective(lexicon: Ref<ReadonlySet<string>>): Hig
     { flush: 'post' },
   )
 
+  const tagRoot = (element: HTMLElement) => {
+    element.dataset.highlightRoot = 'true'
+  }
+
   return {
+    created(element) {
+      // Children are created before the parent mounts, so tagging here keeps an
+      // outer walk from entering a nested root even on first mount.
+      tagRoot(element)
+    },
     mounted(element) {
+      tagRoot(element)
       registry.add(element)
       highlightElement(element, lexicon.value)
     },
@@ -164,6 +168,7 @@ export function createHighlightDirective(lexicon: Ref<ReadonlySet<string>>): Hig
     unmounted(element) {
       clearHighlights(element)
       registry.delete(element)
+      delete element.dataset.highlightRoot
     },
   }
 }

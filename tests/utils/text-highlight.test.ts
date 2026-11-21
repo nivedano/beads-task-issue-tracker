@@ -125,6 +125,20 @@ describe('tokenizeHighlights', () => {
     }
   })
 
+  it('never highlights a partial doc id token', () => {
+    for (const text of ['UC-12-3', 'DR-MSR-001-followup']) {
+      expect(tokenizeHighlights(text, new Set())).toEqual([seg(text)])
+    }
+  })
+
+  it('consumes the lowercase change slug on C ids', () => {
+    expect(tokenizeHighlights('see C-0019-retire-briefs.', new Set())).toEqual([
+      seg('see '),
+      seg('C-0019-retire-briefs', DOCID),
+      seg('.'),
+    ])
+  })
+
   it('marks lexicon terms only when they are defined', () => {
     expect(tokenizeHighlights('uses M1.2 but not M1.3', new Set(['M1.2']))).toEqual([
       seg('uses '),
@@ -145,6 +159,32 @@ describe('tokenizeHighlights', () => {
   it('does not match inside words', () => {
     expect(tokenizeHighlights('xhttps://example.com and aD:\\repos and/or', new Set())).toEqual([
       seg('xhttps://example.com and aD:\\repos and/or'),
+    ])
+  })
+
+  it('consumes the whole extension and never stops mid-token', () => {
+    expect(tokenizeHighlights('foo/bar.typescript', new Set())).toEqual([
+      seg('foo/bar.typescript', REF),
+    ])
+    expect(tokenizeHighlights('a/b/c', new Set())).toEqual([seg('a/b/c')])
+    expect(tokenizeHighlights('models/architecture/and', new Set())).toEqual([
+      seg('models/architecture/and'),
+    ])
+    expect(tokenizeHighlights('see models/architecture/ now', new Set())).toEqual([
+      seg('see '),
+      seg('models/architecture/', REF),
+      seg(' now'),
+    ])
+  })
+
+  it('bounds path segments to 64 characters', () => {
+    const tooLong = 'a'.repeat(65)
+    expect(tokenizeHighlights(`models/${tooLong}.md`, new Set())).toEqual([
+      seg(`models/${tooLong}.md`),
+    ])
+    const atLimit = 'a'.repeat(64)
+    expect(tokenizeHighlights(`models/${atLimit}.md`, new Set())).toEqual([
+      seg(`models/${atLimit}.md`, REF),
     ])
   })
 })
@@ -192,6 +232,24 @@ describe('parseLexicon', () => {
   it('deduplicates repeated entries', () => {
     expect([...parseLexicon('- M1.2\n- M1.2')]).toEqual(['M1.2'])
   })
+
+  it('ignores document markers and parses the documented fixture', () => {
+    const yaml = [
+      '---',
+      '# Architecture term lexicon',
+      'terms:',
+      '  - M1.2          # comments are stripped',
+      '  - arch.method.v2',
+      '  - "quoted.term" # surrounding quotes are stripped',
+      '...',
+      '',
+    ].join('\n')
+    expect([...parseLexicon(yaml)]).toEqual(['M1.2', 'arch.method.v2', 'quoted.term'])
+  })
+
+  it('parses a bare list that starts with a document marker', () => {
+    expect([...parseLexicon('---\n- M1.2\n- M1.3\n...\n')]).toEqual(['M1.2', 'M1.3'])
+  })
 })
 
 describe('highlightElement', () => {
@@ -213,7 +271,19 @@ describe('highlightElement', () => {
     ])
     expect(spans[0]!.getAttribute('title')).toBe('UC-12')
     expect(spans[1]!.getAttribute('title')).toBe('models/x.md')
-    expect(spans[2]!.getAttribute('title')).toBeNull()
+    expect(spans[2]!.getAttribute('title')).toBe('M1.2')
+    el.remove()
+  })
+
+  it('leaves markdown table content plain', () => {
+    const el = mount(
+      '<table><thead><tr><th>C-0019</th></tr></thead>' +
+        '<tbody><tr><td>models/x.md and M1.2</td></tr></tbody></table><p>C-0019</p>',
+    )
+    highlightElement(el, new Set(['M1.2']))
+    expect(el.querySelectorAll('table .hl-ref, table .hl-docid, table .hl-lexicon')).toHaveLength(0)
+    expect(el.querySelectorAll('table span')).toHaveLength(0)
+    expect(el.querySelectorAll('p .hl-docid')).toHaveLength(1)
     el.remove()
   })
 
@@ -284,6 +354,62 @@ describe('createHighlightDirective', () => {
     directive.unmounted(el)
     expect(el.textContent).toBe('See UC-99 and M1.2')
     el.remove()
+  })
+
+  it('never walks into a nested highlight root', async () => {
+    const lexicon = ref<ReadonlySet<string>>(new Set<string>())
+    const directive = createHighlightDirective(lexicon)
+
+    const outer = document.createElement('div')
+    outer.innerHTML = 'outer M1.2 <span id="inner">inner M1.2</span>'
+    const inner = outer.querySelector('#inner') as HTMLElement
+    document.body.appendChild(outer)
+
+    // Vue mounts children before parents: the inner root is registered first.
+    directive.mounted(inner)
+    directive.mounted(outer)
+
+    lexicon.value = new Set(['M1.2'])
+    await nextTick()
+    expect([...outer.querySelectorAll('.hl-lexicon')].map(span => span.textContent)).toEqual([
+      'M1.2',
+      'M1.2',
+    ])
+    expect(inner.querySelectorAll('.hl-lexicon')).toHaveLength(1)
+
+    directive.unmounted(outer)
+    expect(outer.textContent).toBe('outer M1.2 inner M1.2')
+    expect(inner.querySelectorAll('.hl-lexicon')).toHaveLength(1)
+
+    directive.unmounted(inner)
+    expect(outer.textContent).toBe('outer M1.2 inner M1.2')
+    outer.remove()
+  })
+
+  it('keeps nested roots intact when unmounted inner first', async () => {
+    const lexicon = ref<ReadonlySet<string>>(new Set(['M1.2']))
+    const directive = createHighlightDirective(lexicon)
+
+    const outer = document.createElement('div')
+    outer.innerHTML = 'outer M1.2 <span id="inner">inner M1.2</span>'
+    const inner = outer.querySelector('#inner') as HTMLElement
+    document.body.appendChild(outer)
+
+    directive.mounted(inner)
+    directive.mounted(outer)
+    expect(outer.textContent).toBe('outer M1.2 inner M1.2')
+
+    directive.unmounted(inner)
+    expect(outer.textContent).toBe('outer M1.2 inner M1.2')
+
+    lexicon.value = new Set(['M1.3'])
+    await nextTick()
+    expect(outer.textContent).toBe('outer M1.2 inner M1.2')
+    expect(outer.querySelectorAll('.hl-lexicon')).toHaveLength(0)
+
+    directive.unmounted(outer)
+    expect(outer.textContent).toBe('outer M1.2 inner M1.2')
+    outer.remove()
   })
 
   it('re-walks every mounted element when the lexicon set changes', async () => {

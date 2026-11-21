@@ -419,9 +419,9 @@
    Declared after `.dark` on purpose: neon/flat also carry the `dark` class, and
    an equal-specificity rule later in source order wins. */
 :root {
-  --hl-ref: #3b82f6;
-  --hl-lexicon: #b8860b;
-  --hl-docid: #8b5cf6;
+  --hl-ref: #2563eb;
+  --hl-lexicon: #8a6508;
+  --hl-docid: #7c3aed;
 }
 
 .dark {

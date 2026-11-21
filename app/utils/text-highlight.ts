@@ -17,6 +17,11 @@ export interface HighlightSegment {
  * Class definitions as ordered data. The order is the precedence order at the
  * same start offset (leftmost match still wins across offsets).
  */
+const SEGMENT = String.raw`[A-Za-z0-9_.()\[\]{}-]{1,64}`
+// A path match may not stop in the middle of a token: no trailing word char,
+// no further slash, and no `.alnum` continuation (sentence periods are allowed).
+const REF_END = String.raw`(?![A-Za-z0-9_/-])(?!\.[A-Za-z0-9])`
+
 export const HIGHLIGHT_CLASSES = [
   {
     cls: 'hl-ref',
@@ -33,16 +38,18 @@ export const HIGHLIGHT_CLASSES = [
       // Explicitly relative paths
       String.raw`\.\.?/[^\s<>"'\x60]+`,
       String.raw`~/[^\s<>"'\x60]+`,
-      // Bare relative file paths (must carry an extension) and dir paths
-      // ending in a slash. Brackets are allowed so routes like `[id]` stay whole.
-      String.raw`[A-Za-z0-9_.()\[\]{}-]+(?:/[A-Za-z0-9_.()\[\]{}-]+)+\.[A-Za-z0-9]{1,8}`,
-      String.raw`[A-Za-z0-9_.()\[\]{}-]+(?:/[A-Za-z0-9_.()\[\]{}-]+)+/`,
+      // Bare relative file paths (whole extension) and dir paths ending in a
+      // slash. Brackets are allowed so routes like `[id]` stay whole; each
+      // segment is bounded so pathological tokens cannot trigger a long scan.
+      String.raw`${SEGMENT}(?:/${SEGMENT})+\.[A-Za-z0-9]+${REF_END}`,
+      String.raw`${SEGMENT}(?:/${SEGMENT})+/${REF_END}`,
     ].join('|')})`,
   },
   {
     cls: 'hl-docid',
     token: 'docid',
-    pattern: String.raw`\b(?:UC-\d+|DR-(?:[A-Z][A-Z0-9]*-)*\d+|C-\d{3,6}|iss-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*)\b`,
+    // C ids also consume their lowercase change slug (the artifact dir name).
+    pattern: String.raw`\b(?:UC-\d+(?![A-Za-z0-9-])|DR-(?:[A-Z][A-Z0-9]*-)*\d+(?![A-Za-z0-9-])|C-\d{3,6}(?:-[a-z0-9]+)*(?![A-Za-z0-9-])|iss-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*)\b`,
   },
   {
     cls: 'hl-lexicon',
@@ -72,8 +79,9 @@ function countChar(value: string, char: string): number {
 }
 
 /**
- * Drops sentence punctuation and unmatched closing brackets/quotes from a
- * greedy ref match. Balanced brackets inside the path are preserved.
+ * Drops sentence punctuation and unmatched closing brackets from a greedy ref
+ * match. Balanced brackets inside the path are preserved. Quotes never reach
+ * this function: the ref patterns exclude them from the match charset.
  */
 export function trimRef(raw: string): string {
   let value = raw
@@ -91,9 +99,6 @@ export function trimRef(raw: string): string {
           value = value.slice(0, -1)
           changed = true
         }
-      } else if ((last === '"' || last === "'") && countChar(value, last) % 2 === 1) {
-        value = value.slice(0, -1)
-        changed = true
       }
     }
     if (!changed) return value
@@ -215,6 +220,8 @@ export function parseLexicon(yaml: string): Set<string> {
     const line = stripComment(rawLine)
     const trimmed = line.trim()
     if (trimmed.length === 0) continue
+    // YAML document markers carry no terms.
+    if (trimmed === '---' || trimmed === '...') continue
 
     if (trimmed.startsWith('- ') || trimmed === '-') {
       if (mode === 'root' || mode === 'terms') {

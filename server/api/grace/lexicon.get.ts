@@ -1,5 +1,6 @@
 import { open, realpath, stat } from 'node:fs/promises'
-import { resolve, sep } from 'node:path'
+import { resolve } from 'node:path'
+import { isWithinRoot } from '../../utils/lexicon-path'
 
 const MAX_LEXICON_BYTES = 1024 * 1024
 const LEXICON_RELATIVE = ['models', 'architecture', 'term-lexicon.yaml'] as const
@@ -19,7 +20,7 @@ export default defineEventHandler(async (event) => {
     const root = await realpath(resolve(project))
     const target = resolve(root, ...LEXICON_RELATIVE)
     const resolved = await realpath(target)
-    if (!resolved.startsWith(root + sep)) return null
+    if (!isWithinRoot(root, resolved)) return null
 
     const info = await stat(resolved)
     if (!info.isFile()) return null

@@ -419,4 +419,20 @@ mod tests {
         fs::create_dir_all(dir.path().join("models/architecture/term-lexicon.yaml")).unwrap();
         assert_eq!(read_project_lexicon(dir.path()), None);
     }
+
+    #[test]
+    fn a_lexicon_symlinked_outside_the_project_is_none() {
+        use crate::grace::test_support::symlink_dir;
+
+        let project = TempDir::new("lexicon-symlink");
+        let outside = TempDir::new("lexicon-outside");
+        write_lexicon(&outside, b"terms:\n  - M1.9\n");
+
+        let models = project.path().join("models");
+        if symlink_dir(&outside.path().join("models"), &models).is_err() {
+            eprintln!("skipping symlink escape: cannot create a directory symlink here");
+            return;
+        }
+        assert_eq!(read_project_lexicon(project.path()), None);
+    }
 }
