@@ -113,7 +113,7 @@ const handleSort = (field: string | null, direction: 'asc' | 'desc') => {
 
   <!-- No padding/scroller here: IssueTable owns the only scroll surface, and
        the pane's height (flex-1 + min-h-0) is what makes h-full resolve. -->
-  <div class="flex-1 min-h-0 px-4 pb-4">
+  <div class="flex-1 min-h-0">
     <IssueTable
       ref="tableRef"
       v-model:selected-ids="selectedIds"
